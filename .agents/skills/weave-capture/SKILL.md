@@ -273,7 +273,7 @@ Creating a missing live artifact is allowed only for the selected capture target
 
 - For `exploration.md`, synthesize the artifact from the current discussion and mark unresolved discovery points clearly.
 - For `prd.md`, synthesize the artifact from current discussion, PRD sessions, and useful exploration context. Do not require `exploration.md`.
-- For architecture, synthesize `architecture/index.md` and any explicit or template-backed facet files from current discussion, architecture sessions, useful PRD context, and codebase/technical context. A just-completed Plan Mode `weave-architect` discussion is valid source material for the first architecture draft.
+- For architecture, synthesize `architecture/index.md` and any explicit or template-backed facet files from current discussion, architecture sessions, useful PRD context, and codebase/technical context. A just-completed `weave-architect` discussion is valid source material for the first architecture draft, though `weave-architect` normally writes the technical shape itself once the user confirms an approach.
 - If the current discussion does not contain enough durable content for the selected missing artifact, write the session note and stop before creating the live artifact. Tell the user which lane conversation is needed next.
 
 # Behavior Rules

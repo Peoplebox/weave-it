@@ -36,6 +36,8 @@ Add a concise dated `Revision History` entry for meaningful changes.
 
 Use the architecture artifact as the target when technical approach, affected systems, data flow, architecture decisions, rejected alternatives, rollout, operations, testing, security, risks, assumptions, open technical questions, or architecture facet structure changed.
 
+If the chosen approach changes, move the previous approach under `Options Considered` with why it was dropped instead of deleting it, and update `Slices Readiness`.
+
 Prefer `prd.md` as the product contract. If the technical clarification exposes a product ambiguity not settled by the PRD, record it under `Product Questions Raised by Technical Design` and report `prd.md` as a follow-up artifact.
 
 Add a concise dated `Revision History` entry for meaningful changes.

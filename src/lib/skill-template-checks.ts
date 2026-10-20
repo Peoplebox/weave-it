@@ -30,23 +30,6 @@ Do not say \`Notices: ...\`, \`The command returned notices\`, raw
 asks for diagnostics.
 ` as const;
 
-export const EXPECTED_PLAN_MODE_GUARD = `# Plan Mode Guard
-
-This skill must run in Plan Mode.
-
-If the current environment exposes collaboration mode and it is not Plan Mode, stop immediately and say:
-
-\`This skill must run in Plan Mode. Switch to Plan Mode, then invoke <skill-name> again.\`
-
-Do not inspect deeply, ask discovery questions, update artifacts, or continue work before this guard passes.
-
-Static Weave skill content cannot automatically switch collaboration mode. The host, user, or developer layer must switch modes before this skill continues.
-
-In Plan Mode, this skill resolves the active branch-derived change and treats \`<lane>\` as the explicit target lane. It does not write local artifact lane state.
-
-Do not write repo-tracked artifacts directly. Produce the plan, decisions, questions, or proposed artifact changes needed for the user to approve. Actual artifact writes happen only after the user exits Plan Mode and asks to implement the plan.
-` as const;
-
 export const EXPECTED_LIFECYCLE_SYNC_PROTOCOL = `# Lifecycle Staleness Verification
 
 Before calling \`weave change progress\`, verify content-sync of every artifact

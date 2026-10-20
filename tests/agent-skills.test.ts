@@ -14,7 +14,6 @@ import {
 } from "../src/lib/agent-skills.js";
 import {
   EXPECTED_LIFECYCLE_SYNC_PROTOCOL,
-  EXPECTED_PLAN_MODE_GUARD,
   EXPECTED_SILENT_COMMAND_OUTPUT,
 } from "../src/lib/skill-template-checks.js";
 
@@ -83,6 +82,11 @@ async function assertSkillBlockPresence(
       throw error;
     }
   }
+}
+
+async function assertSkillBlockAbsent(skill: string, block: string): Promise<void> {
+  const templatePath = path.join(process.cwd(), "templates", "skills", skill, "SKILL.md");
+  expect(await readFile(templatePath, "utf8"), `template unexpectedly contains: ${templatePath}`).not.toContain(block);
 }
 
 async function tempDir(): Promise<string> {
@@ -166,27 +170,23 @@ describe("agent skills", () => {
     expect(skill.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
-  it("ships weave-architect as a canonical read-only architecture thinking skill", async () => {
+  it("ships weave-architect as a technical options-then-shape skill", async () => {
     const skill = await readDefaultSkill("weave-architect");
+    const indexTemplate = await readFile(path.join(process.cwd(), "templates", "skills", "weave-architect", "index-template.md"), "utf8");
 
     expect(skill.name).toBe("weave-architect");
     expect(skill.description).toContain("Engineering design partner");
-    expect(skill.content).toContain("# Plan Mode Guard");
-    expect(skill.content).toContain("This skill must run in Plan Mode. Switch to Plan Mode, then invoke weave-architect again.");
-    expect(skill.content).toContain("Static Weave skill content cannot automatically switch collaboration mode");
-    expect(skill.content).toContain("resolves the active branch-derived change");
-    expect(skill.content).toContain("does not write local artifact lane state");
-    expect(skill.content).toContain("Do not write repo-tracked artifacts directly");
-    expect(skill.content).not.toContain("# Plan Mode Protocol");
-    expect(skill.content).toContain("This skill is a read-only architecture thinking partner");
-    expect(skill.content).toContain("It never creates, edits, renames, deletes, progresses repo-tracked artifacts, or writes local artifact lane state.");
-    expect(skill.content).toContain("It does not read architecture template resources");
+    expect(skill.content).not.toContain("# Plan Mode Guard");
     expect(skill.content).toContain("Treat `prd.md` as the preferred product contract when it exists and is useful");
     expect(skill.content).toContain("do not require it before architecture thinking");
-    expect(skill.content).toContain("Interview the user relentlessly about the engineering design");
-    expect(skill.content).toContain("Ask questions one at a time and wait for the user's response");
-    expect(skill.content).toContain('explicitly offer: "Explain with an example before deciding"');
+    expect(skill.content).toContain("## 1. Open with options");
+    expect(skill.content).toContain("## 2. Talk it through");
+    expect(skill.content).toContain("## 3. Pin down the chosen approach");
+    expect(skill.content).toContain('offer: "Explain with an example before deciding"');
     expect(skill.content).toContain("restate the original decision question");
+    expect(skill.content).toContain("Write only after the user confirms an approach.");
+    expect(skill.content).toContain("weave change progress architecture --source prd --source research --source codebase --json");
+    expect(skill.content).toContain("`weave-stress-test architecture`");
     expect(skill.content).toContain("wiki/changes/<change-id>/architecture.md");
     expect(skill.content).toContain("wiki/changes/<change-id>/architecture/index.md");
     expect(skill.content).toContain("wiki/changes/<change-id>/architecture/*.md");
@@ -200,33 +200,18 @@ describe("agent skills", () => {
         "```",
       ].join("\n"),
     );
-    expect(skill.content).toContain("recommend `weave-capture architecture` explicitly");
     expect(skill.content).toContain("Apply the Silent Weave Command Output policy to the commands above.");
-    expect(skill.content).not.toContain("Surface any Tier 1 notices from the commands above.");
-    expect(skill.content).not.toContain("After the active change is resolved, run:");
-    expect(skill.content).toContain("Read `.weave/architecture-considerations.md` when present");
     expect(skill.content).toContain("# Team Architecture Considerations");
     expect(skill.content).toContain("Treat this file as user-owned advisory guidance");
-    expect(skill.content).toContain("Do not edit it.");
-    expect(skill.content).toContain("Apply relevant guidance silently while reasoning.");
     expect(skill.content).toContain("# Workspace Repo Context Protocol");
     expect(skill.content).toContain("Registered entries in `repos[]` are implementation and documentation locations inside that workspace, not separate artifact targets.");
-    expect(skill.content).toContain("Lightly inventory all registered repos. Deeply inspect only repos that appear relevant");
-    expect(skill.content).toContain("Prefer current docs, knowledge specs, ADRs, and repo-local Weave wiki content before reading implementation code.");
     expect(skill.content).toContain("Repos skipped: <repo id> (<reason>)");
-    expect(skill.content).toContain("# Sub-Repo Architecture Discovery");
     expect(skill.content).toContain("Docs and ADRs are the first pass. Code and tests are the verification pass.");
-    expect(skill.content).toContain("## Cross-Repo Architecture");
-    expect(skill.content).not.toContain("weave change progress architecture --source prd --source codebase --json");
-    expect(skill.content).not.toContain("artifact: architecture");
-    expect(skill.content).not.toContain("created_at: <YYYY-MM-DDTHH:mm:ss.sssZ>");
-    expect(skill.content).not.toContain("updated_at: <YYYY-MM-DDTHH:mm:ss.sssZ>");
     expect(skill.content).toContain("Treat `weave-architect` as entering or resuming the architecture lane for the active change.");
-    expect(skill.content).toContain("# Architecture Context Loading");
     expect(skill.content).toContain("sessions/*-architecture.md");
     expect(skill.content).toContain("Facet-only folder mode is valid context");
-    expect(skill.content).toContain("## Architecture Dissection");
-    expect(skill.content).not.toContain("Before writing the live artifact, inspect pending session notes for the selected lane");
+    expect(indexTemplate).toContain("## Options Considered");
+    expect(indexTemplate).toContain("## Slices Readiness");
     expect(skill.sourcePath).toContain(path.join("templates", "skills", "weave-architect", "SKILL.md"));
     expect(skill.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
@@ -273,7 +258,7 @@ describe("agent skills", () => {
     expect(skill.content).toContain("missing `exploration.md`: create it for the valid active change");
     expect(skill.content).toContain("missing `prd.md`: create it from current discussion, PRD sessions, and useful exploration context when enough product truth exists");
     expect(skill.content).toContain("missing architecture artifact: create `architecture/index.md` from current discussion");
-    expect(skill.content).toContain("just-completed Plan Mode `weave-architect` discussion is valid source material");
+    expect(skill.content).toContain("just-completed `weave-architect` discussion is valid source material");
     expect(skill.content).toContain("weave change progress exploration --source discussion --json");
     expect(skill.content).toContain("weave change progress prd --source exploration --source sessions --json");
     expect(skill.content).toContain("weave change progress architecture --source prd --source codebase --json");
@@ -446,6 +431,16 @@ describe("agent skills", () => {
     expect(skill.content).not.toMatch(/stress-test-<lane>\.md/);
   });
 
+  it("gates weave-slices on a current architecture verdict for feat changes", async () => {
+    const skill = await readDefaultSkill("weave-slices");
+
+    expect(skill.content).toContain("## Stress Test Gate");
+    expect(skill.content).toContain("stress_tests.architecture");
+    expect(skill.content).toContain("weave change verdict architecture waived --reason");
+    expect(skill.content).toContain("Never record a waiver the user did not ask for.");
+    expect(skill.content).toContain("`Slices Readiness`");
+  });
+
   it("ships weave-challenger as a critic that never sees the conversation", async () => {
     const challenger = await readFile(path.join(process.cwd(), "templates", "agents", "weave-challenger.md"), "utf8");
 
@@ -605,18 +600,15 @@ describe("agent skills", () => {
     }
   });
 
-  it("embeds the Plan Mode Guard verbatim in weave-architect only", async () => {
-    const planModeRequired = [{ skill: "weave-architect", lane: "architecture" }] as const;
-    for (const { skill, lane } of planModeRequired) {
-      const expected = EXPECTED_PLAN_MODE_GUARD
-        .replaceAll("<lane>", lane)
-        .replaceAll("<skill-name>", skill);
-      await assertSkillBlockPresence(skill, expected, { requiredFor: "design-discussion" });
+  it("does not require Plan Mode in any bundled skill", async () => {
+    for (const skill of bundledSkillNames) {
+      await assertSkillBlockAbsent(skill, "# Plan Mode Guard");
     }
   });
 
   it("embeds the Lifecycle Staleness Verification Protocol verbatim in every progress-calling skill", async () => {
     const progressCallers = [
+      "weave-architect",
       "weave-explore",
       "weave-stress-test",
       "weave-questions",

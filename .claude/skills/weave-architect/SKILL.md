@@ -1,6 +1,6 @@
 ---
 name: weave-architect
-description: Engineering design partner for the active Weave change. Reads the PRD, research.md, and code, then works through technical approaches, trade-offs, risks, data and API contracts with the user, and returns an architecture dissection for weave-capture to save. Use when the user wants technical design, an implementation strategy, trade-off analysis, a risk review, or a deep dive into an architecture facet. Not for product decisions (use weave-explore) or splitting work into tasks (use weave-slices).
+description: Engineering design partner for the active Weave change. Proposes and compares two to four technical approaches grounded in research.md, the PRD, and the code, talks through their trade-offs with the user, and once the user picks one writes the technical shape to architecture/index.md and facet files such as schema or API contracts. Use when the user wants technical design, an implementation strategy, trade-off analysis, a risk review, or a deep dive into an architecture facet. Not for product decisions (use weave-explore) or splitting work into tasks (use weave-slices).
 license: MIT
 compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
 metadata:
@@ -10,52 +10,30 @@ metadata:
 
 # Weave Architect
 
-This skill is a read-only architecture thinking partner. It gathers context, interviews the user, stress-tests tradeoffs, and produces a clear technical dissection that `weave-capture architecture` can persist later.
+Help the user work out **how to build** the change, by comparing technical approaches together before settling on one. When the user decides, write the result as the technical shape in the architecture artifact, which `weave-stress-test architecture` can challenge and `weave-slices` can break into work.
 
-It never creates, edits, renames, deletes, progresses repo-tracked artifacts, or writes local artifact lane state.
+This skill is for engineering. Be technical and specific: modules, data, contracts, migrations, failure modes. Product decisions belong in `weave-explore` and `weave-prd`.
 
-It does not read architecture template resources; templates are writer inputs for `weave-capture` and restructuring inputs for `weave-clarify`.
-
-# Plan Mode Guard
-
-This skill must run in Plan Mode.
-
-If the current environment exposes collaboration mode and it is not Plan Mode, stop immediately and say:
-
-`This skill must run in Plan Mode. Switch to Plan Mode, then invoke weave-architect again.`
-
-Do not inspect deeply, ask discovery questions, update artifacts, or continue work before this guard passes.
-
-Static Weave skill content cannot automatically switch collaboration mode. The host, user, or developer layer must switch modes before this skill continues.
-
-In Plan Mode, this skill resolves the active branch-derived change and treats `architecture` as the explicit target lane. It does not write local artifact lane state.
-
-Do not write repo-tracked artifacts directly. Produce the plan, decisions, questions, or proposed artifact changes needed for the user to approve. Actual artifact writes happen only after the user exits Plan Mode and asks to implement the plan.
+Start with options rather than an interview. The right questions depend on the approach, so detailed decisions come last and only for the approach that was chosen.
 
 # Operating Principles
 
 - Treat `weave-architect` as entering or resuming the architecture lane for the active change.
-- Treat `prd.md` as the preferred product contract when it exists and is useful, but do not require it before architecture thinking.
-- Read enough code, docs, ADRs, knowledge specs, and existing Weave artifacts to understand current implementation patterns before recommending design.
-- Read `.weave/architecture-considerations.md` when present and use it as user-owned team architecture guidance.
-- In workspace mode, inspect registered repo folders as implementation locations inside one shared change context. In repo mode, keep the resolved repo context as the boundary.
-- Support both legacy `wiki/changes/<change-id>/architecture.md` and folder-mode `wiki/changes/<change-id>/architecture/index.md` plus `architecture/*.md` facets.
-- If both `architecture.md` and `architecture/` exist, call out the conflict and ask the user to resolve it with `weave-clarify` or `weave-capture` before relying on either as canonical.
-- Ask focused product questions only when technical design exposes ambiguity not settled by existing artifacts.
-- Do not create implementation slices; use `weave-slices` after the design is captured and ready.
-- For `--type fix` changes, read `findings.md` as upstream product context when present.
+- Treat `prd.md` as the preferred product contract when it exists and is useful, but do not require it before architecture thinking. For `--type fix` changes, read `findings.md` as upstream product context.
+- Build on `research.md` for how the system works today instead of re-researching it.
+- Prefer existing architecture, framework conventions, helpers, data models, and ADRs over new abstractions.
+- Support both legacy `architecture.md` and folder-mode `architecture/index.md` plus `architecture/*.md` facets.
+- If both `architecture.md` and `architecture/` exist, call out the conflict and ask the user to resolve it with `weave-clarify` before relying on either.
+- Do not create implementation slices; that is `weave-slices`.
+- Write repo-tracked artifacts only in the architecture lane, and only after the user confirms an approach.
 
 # Resolve Context
-
-Start by discovering the current Weave session and branch-derived active change:
 
 ```bash
 weave workspace --json
 weave change current --json
 weave change status --json
 ```
-
-Do not run artifact-context commands. When the discussion should be persisted, recommend `weave-capture architecture` explicitly.
 
 If `weave change current --json` reports no active change, stop and say:
 
@@ -104,34 +82,31 @@ Context loaded:
 
 Do not exhaustively scan every repo unless the user explicitly asks for a workspace-wide audit.
 
-# Architecture Context Loading
+# Load Context
 
-Read live artifacts first, then sessions:
+Read, in this order, whatever exists:
 
 ```text
 wiki/changes/<change-id>/status.yml
 wiki/changes/<change-id>/research.md
-wiki/changes/<change-id>/exploration.md
 wiki/changes/<change-id>/prd.md
+wiki/changes/<change-id>/findings.md
+wiki/changes/<change-id>/exploration.md
 wiki/changes/<change-id>/architecture.md
 wiki/changes/<change-id>/architecture/index.md
 wiki/changes/<change-id>/architecture/*.md
 wiki/changes/<change-id>/sessions/*-architecture.md
 wiki/changes/<change-id>/knowledge-delta.md
-wiki/changes/<change-id>/tasks.md
 .weave/architecture-considerations.md
 ```
 
-When `research.md` exists, treat it as the baseline for how the system works today and build on it instead of re-researching the same areas. Re-check its claims in code only where a design decision depends on them, and point out anything that no longer matches.
+- `research.md` is the baseline for today's system. Re-check its claims in code only where a design decision depends on them, and point out anything that no longer matches. If it is missing and the change touches existing code, say once that `weave-questions` then `weave-research` would give the design a factual baseline, then continue if the user wants to.
+- Legacy file mode: read `architecture.md`. Folder mode: read `architecture/index.md` first, then direct child facet files. Facet-only folder mode is valid context when one or more facet files are substantive even if `index.md` is missing or scaffold-only. Report conflict mode explicitly.
+- Then inspect only code and docs that can affect the design: source modules and tests in the affected repos, schemas and migrations, API and event contracts, jobs, config, feature flags, deployment files, and integration boundaries across workspace repos. Docs and ADRs are the first pass. Code and tests are the verification pass.
 
-Architecture shape rules:
+## Resuming
 
-- Legacy file mode: read `architecture.md`.
-- Folder mode: read `architecture/index.md` first when present, then direct child facet files under `architecture/*.md`.
-- Facet-only folder mode is valid context when one or more facet files are substantive even if `index.md` is missing or scaffold-only.
-- Conflict mode exists when both `architecture.md` and `architecture/` exist. Report it explicitly.
-
-For session notes, prefer the latest `## Next Resume Point`, unresolved decisions, and explicit user preferences. If session notes contain `facets: [...]` frontmatter, use it to find relevant facet discussions, but do not require it.
+If the architecture artifact or architecture session notes exist, resume before proposing anything new: the live artifact is canonical, and the latest `## Next Resume Point` in `sessions/*-architecture.md` says where to pick up. If session notes contain `facets: [...]` frontmatter, use it to find relevant facet discussions. An explicit direction from the user beats both.
 
 # Team Architecture Considerations
 
@@ -146,73 +121,67 @@ Treat this file as user-owned advisory guidance:
 - Do not treat examples as mandatory unless the file says they are.
 - If it conflicts with PRD context, ADRs, existing architecture, code reality, or explicit user instructions, call out the conflict and ask which source should be authoritative.
 
-# Codebase And Docs Context
+# How the Conversation Works
 
-Inspect only context that can materially affect the architecture:
+The conversation moves through three modes. Move forward when the user is ready, and go back whenever they want.
 
-- source modules and tests in the affected repo folders
-- existing internal docs, ADRs, and knowledge specs
-- schemas, migrations, API contracts, event contracts, jobs, config, feature flags, and deployment files
-- adjacent integration boundaries across registered workspace repos
+## 1. Open with options
 
-Use existing architecture, framework conventions, helpers, data models, and ADRs before inventing a new abstraction.
+Start with a short message:
 
-# Sub-Repo Architecture Discovery
+- **What needs to be built**, restated in technical terms from the PRD (or findings) so the user can correct it.
+- **The system today**, from `research.md`, with the code paths that matter.
+- **Two to four approaches.** Make them genuinely different, and include the smallest change that extends what already exists. For each approach give:
+  - how it works, in a few sentences or a small diagram
+  - what changes: repos, modules, data, and contracts
+  - trade-offs: complexity, performance, migration effort, operational risk, and how reversible it is
+  - fit with existing patterns and `.weave/architecture-considerations.md`
+  - rough size (small, medium, large)
+- One open question, such as: *"Which of these fits best, what am I missing, or what would you change?"*
 
-In workspace mode, use registered repos to understand technical boundaries across the workspace.
+Do not recommend an approach in the first message unless the user asks.
 
-For relevant repos, prioritize reading:
+## 2. Talk it through
 
-```text
-README.md
-CONTEXT.md
-CONTEXT-MAP.md
-.weave/architecture-considerations.md
-docs/**
-docs/adr/**
-adr/**
-specs/**
-wiki/knowledge/**
-wiki/changes/**
-package manifests and build config
-schema and migration files
-API route or contract files
-event, queue, job, or worker definitions
-deployment and runtime config
-tests around integration boundaries
-```
+Follow the user's thread. Useful moves:
 
-Use sub-repo context to identify:
+- sketch a sequence or data-flow diagram, a call tree, or a schema for the approaches being compared
+- compare approaches on one concrete criterion at a time (a migration on live data, a burst of traffic, a partial failure)
+- combine approaches, or propose a new one when the discussion reveals it
+- play devil's advocate on the approach the user is leaning towards
+- give your recommendation and why, once the user has reacted
 
-- affected repos and ownership boundaries
-- cross-repo data flow
-- API, event, job, schema, and deployment contracts
-- shared libraries or duplicated behavior
-- migration and rollout constraints
-- observability, testing, and failure-mode implications
-- architecture decisions already recorded in docs, ADRs, or repo-local wiki content
+There is no question quota in this mode.
 
-Docs and ADRs are the first pass. Code and tests are the verification pass.
+## 3. Pin down the chosen approach
 
-When returning an architecture dissection, include repo-aware findings when relevant:
+When the user leans clearly towards one approach, confirm it, then settle the decisions it needs, one at a time. For each question explain why it matters, give your recommended answer and the alternatives, and offer: "Explain with an example before deciding". If the user asks for an example, explain the trade-off with a concrete example grounded in the PRD and the codebase, restate the original decision question, and wait for the answer.
 
-```text
-## Workspace Context
-- Affected repos:
-- Repos inspected:
-- Important docs/ADRs:
-- Important code/test anchors:
-- Repos skipped:
+Cover only what applies:
 
-## Cross-Repo Architecture
-- Boundaries:
-- Contracts:
-- Data flow:
-- Rollout/migration concerns:
-- Risks:
-```
+1. Data model and migrations, including existing data
+2. API, event, and job contracts
+3. Frontend and backend boundaries
+4. Consistency, concurrency, and idempotency
+5. Failure handling, retries, and rollback
+6. Security, permissions, and data access
+7. Performance and scale
+8. Observability
+9. Rollout: feature flags, sequencing across repos, backwards compatibility
+10. Testing strategy at each boundary
 
-Keep this skill read-only. Do not create, edit, move, rename, delete, or progress artifacts in any sub-repo.
+If a technical decision depends on product behaviour the PRD does not settle, ask the product question plainly. If the answer changes the PRD, stop and suggest `weave-clarify prd` rather than designing around an unrecorded product decision.
+
+## Steering phrases
+
+| The user says | You |
+| --- | --- |
+| "more options", "what else?" | propose new approaches, different from those already discussed |
+| "go deeper on B" | expand B: flows, contracts, failure modes, open questions |
+| "what would you do?" | give your recommendation and the reasons |
+| "interview me" | switch to mode 3 for the current leading approach |
+| "we've decided", "lock it in", "write it up" | confirm the approach, then write the technical shape |
+| "pause", "save for later" | suggest `weave-capture session architecture` to checkpoint without a decision |
 
 # Deep Dive Modes
 
@@ -225,49 +194,106 @@ The user may invoke this skill broadly or target a concern:
 
 For a targeted deep dive, still load enough surrounding context to avoid local optimization. Do not write the target file.
 
-# Interview Behavior
+# Write the Technical Shape
 
-Interview the user relentlessly about the engineering design until shared technical understanding is reached.
+Write only after the user confirms an approach. Before writing, restate the chosen approach in two or three sentences and ask "Shall I write this up?" For mid-discussion checkpoints use `weave-capture session architecture` instead.
 
-Ask questions one at a time and wait for the user's response before continuing.
+Resolve the artifact shape first:
 
-For each blocking architecture question:
+- If only `architecture.md` exists, keep legacy file mode unless the user asks to move to folder mode.
+- If `architecture/` exists, or neither exists, use folder mode with `architecture/index.md` as the entry point.
+- If both exist, stop and ask the user to reconcile them with `weave-clarify`.
 
-- explain why the question matters
-- provide a likely/default recommendation
-- explain implications of alternative choices
-- explicitly offer: "Explain with an example before deciding"
+Use the templates next to this `SKILL.md` (at `<agent-skills-dir>/weave-architect/` after install): `index-template.md` for `architecture/index.md`, and `<facet>-template.md` (for example `schema-template.md`, `api-contract-template.md`, `frontend-backend-template.md`) for facets the decisions call for. If the user has modified a template, follow their version. Create a facet without a template only when a concern cannot be represented honestly in the existing files. In legacy file mode, use the same sections inside `architecture.md`.
 
-If the user asks for an example or explanation before deciding:
+- Keep every approach that was seriously discussed under **Options Considered**, with why it was chosen or rejected.
+- Cite `research.md` and code paths in **System Context** so reviewers can check the starting point.
+- Put unresolved risks and questions under **Risks And Open Questions**, marked whether they block slices.
+- Do not paste the conversation. The shape is the conclusion, not the transcript.
+- Keep this skill's writes inside the change's architecture artifact. Do not create, edit, move, rename, delete, or progress artifacts in any sub-repo.
 
-- explain the tradeoff with a concrete example grounded in the PRD, architecture context, and codebase
-- restate the original decision question
-- wait for the user's decision before continuing
+Set **Slices Readiness**:
 
-# Output
+- `Ready` when there is a chosen approach, its contracts and data changes are clear enough to split into vertical slices, and no open question is marked as blocking slices.
+- Otherwise `Not ready — <what is missing>`.
 
-Return a structured, readable architecture dissection instead of writing files. Include only sections that are useful for the current discussion.
+Then record progress, citing what informed the design:
 
-Recommended shape:
-
-```text
-## Architecture Dissection
-- Current understanding
-- Decisions and recommendations
-- Facets affected
-- Tradeoffs
-- Risks and mitigations
-- Open questions
-- Capture guidance
+```bash
+weave change progress architecture --source prd --source research --source codebase --json
 ```
 
-When useful, name likely destination facets for `weave-capture`, such as `index`, `schema`, `api-contract`, `frontend-backend`, or a user-named facet. This is guidance, not a command.
+Pass only sources that actually informed it: `findings` is not a source, so for fix changes use `--source discussion --source codebase` (and `research` when used); add `--source sessions` when earlier architecture session notes did.
 
-If the user wants to persist the discussion, recommend:
+# Lifecycle Staleness Verification
+
+Before calling `weave change progress`, verify content-sync of every artifact
+that would otherwise be marked stale by the default pessimistic propagation.
+
+The `--source` arguments of `weave change progress` declare causal influence,
+not strict-DAG dependency. Pessimistic staleness propagation is the safe default,
+not the only correct answer. When the clarification this skill just performed is
+narrowly contained (a typo fix, a sentence rewording, an open-question
+resolution), dependents may already be in content sync; flagging them stale
+creates churn the user did not ask for.
+
+Procedure:
+
+1. Identify the set of structural dependents of the lane being progressed. Read
+   `wiki/changes/<change-id>/status.yml` and compute which lanes list this
+   lane in their `artifacts.<lane>.sources`.
+2. For each dependent lane, read both the dependent artifact and the artifact
+   just being progressed. Decide whether the change you just made invalidates
+   the dependent's content. The judgement is binary per lane: invalidates, or
+   does not invalidate.
+3. Select the appropriate progress invocation:
+
+   - Every dependent is invalidated (or there are no dependents):
+     `weave change progress <lane> --source <list> --json` (default, no new flags)
+   - No dependent is invalidated:
+     `weave change progress <lane> --source <list> --no-invalidate --json`
+   - Some dependents are invalidated, some are not:
+     `weave change progress <lane> --source <list> --invalidate=<comma-list> --json`
+
+4. If a previously-stale dependent is now in content sync (because the upstream
+   change has been absorbed but the stale flag still lingers from an earlier
+   pessimistic propagation), clear it explicitly:
+
+   `weave change clear-stale <lane> --reason "<one-sentence verification>" --json`
+
+   Always pass `--reason` so the audit entry in `stale_history` carries the
+   verification rationale. Do not clear flags without reading both artifacts.
+
+5. Never edit `status.yml` by hand to manipulate stale state. Use the CLI.
+
+Failure mode: if you are uncertain whether a dependent is in content sync,
+prefer the pessimistic default (omit `--no-invalidate` and `--invalidate`).
+The user can always run `weave-clarify <lane>` later. A false-positive stale
+flag is recoverable; silently leaving a real downstream artifact mismatched is
+not.
+
+# Final Response
+
+After writing the technical shape, reply with exactly this shape and nothing else:
 
 ```text
-Run `weave-capture` to write the architecture discussion into the appropriate architecture artifact files.
+Technical shape written to wiki/changes/<change-id>/<architecture/index.md | architecture.md>.
+
+Chosen approach: <one sentence>
+Options considered: <N>
+Facets: <list, or none>
+Slices readiness: <Ready | Not ready — reason>
+
+Next step: <see below>
 ```
+
+Choose the next step:
+
+- `Not ready` → say what is missing and offer to keep designing.
+- `Ready` on a `feat` change → `weave-stress-test architecture`, ideally in a fresh session so the critique is independent of this discussion.
+- `Ready` on any other change type → `weave-slices`, or `weave-stress-test architecture` if the user wants the design challenged first.
+
+---
 
 # Silent Weave Command Output
 

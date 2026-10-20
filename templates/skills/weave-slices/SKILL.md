@@ -51,6 +51,28 @@ Break a change into vertical slices under `task-slices/<NN>-<slug>/`. Each slice
 - `--type fix`: `findings.md` (required) + `architecture/` (optional).
 - `--type chore` / `--type refactor`: `exploration.md` (required) + `architecture/` (optional).
 
+## Stress Test Gate
+
+Read `type` and `stress_tests.architecture` from `weave change status --json`.
+
+For `feat` changes, continue only when the architecture verdict is `holds`, `holds-with-changes`, or `waived`, and is not `outdated`. Otherwise stop before scaffolding anything and reply with the matching message:
+
+| Situation | Reply |
+| --- | --- |
+| no architecture verdict | `The technical shape hasn't been stress-tested yet. Run weave-stress-test architecture (ideally in a fresh session), then run weave-slices again. To skip it, tell me why and I'll record a waiver.` |
+| verdict is `outdated` | `The architecture changed after its stress test (<verdict> on <judged_at>). Run weave-stress-test architecture again so the slices build on a checked design.` |
+| verdict is `needs-reshaping` | `The last stress test found the technical approach doesn't hold. Return to weave-architect, starting from the session note at <stress_tests.architecture.session>.` |
+
+If the user explicitly asks to skip the stress test and gives a reason, record it, then continue:
+
+```bash
+weave change verdict architecture waived --reason "<the user's reason>" --json
+```
+
+Never record a waiver the user did not ask for. For other change types there is no gate; if an architecture verdict of `needs-reshaping` exists, mention it before continuing.
+
+Also check the architecture artifact's `Slices Readiness` section when present. If it says `Not ready`, report what is missing and ask whether to continue anyway.
+
 ## Outputs
 
 ```text
