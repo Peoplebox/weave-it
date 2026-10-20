@@ -9,6 +9,16 @@ import { artifactFrontmatter } from "./artifact-metadata.js";
 import { pathExists } from "./files.js";
 import { findGitRoot } from "./git.js";
 import { slugify, titleFromSlug } from "./ids.js";
+import {
+  autoAdvanceDefaults,
+  autoAdvanceTransitions,
+  type AutoAdvanceFlags,
+  isLifecycleTransitionId,
+  lifecycleTransition,
+  lifecycleTransitionIds,
+  type LifecycleTransitionId,
+  normalizeAutoAdvanceFlags,
+} from "./lifecycle-transitions.js";
 import { defaultSessionPath, type SessionCurrentChange } from "./session-state.js";
 import { ensureWeaveScaffold } from "./weave-scaffold.js";
 import { resolveChangeContext, type WorkspaceModeKind } from "./workspace-mode.js";
@@ -69,6 +79,29 @@ export interface StressTestRecord {
 
 export type StressTestRecords = Partial<Record<StressTestLane, StressTestRecord>>;
 
+// Phase runs: one entry per skill session started for a lane, written by `weave advance`
+// or `weave change run start`. `upstream_updated_at` pins the upstream progress that
+// triggered an auto-advance run so the same update never starts the phase twice.
+export const runResults = ["running", "succeeded", "incomplete", "failed"] as const;
+export const runTriggers = ["auto-advance", "manual"] as const;
+export type RunResult = (typeof runResults)[number];
+export type RunTrigger = (typeof runTriggers)[number];
+export type FinishedRunResult = Exclude<RunResult, "running">;
+
+export interface PhaseRun {
+  id: string;
+  lane: ChangeStage;
+  skill: string;
+  agent: string;
+  session_id?: string;
+  trigger: RunTrigger;
+  transition?: LifecycleTransitionId;
+  upstream_updated_at?: string;
+  started_at: string;
+  finished_at: string | null;
+  result: RunResult;
+}
+
 export interface StaleChangeLaneMetadata {
   invalidated_by: ChangeStage;
   invalidated_at: string;
@@ -124,6 +157,7 @@ export interface ChangeOperationResult {
   title: string;
   type: ChangeType;
   branch: string;
+  auto_advance: Record<string, boolean>;
   targets: ChangeTargetResult[];
   message: string;
 }
@@ -138,6 +172,8 @@ export interface ChangeSummary {
   stale_history: StaleHistoryEntry[];
   artifacts: ChangeArtifactsMetadata;
   stress_tests: StressTestRecords;
+  auto_advance: AutoAdvanceFlags;
+  runs: PhaseRun[];
   knowledge?: KnowledgeMetadata;
   branch: string;
   path: string;
@@ -233,6 +269,8 @@ export interface CreateChangeOptions {
   title: string;
   type?: ChangeType;
   slug?: string;
+  // `false` starts the change with every auto-advance transition off instead of the type defaults.
+  autoAdvance?: boolean;
   now?: Date;
   randomId?: () => string;
   sessionPath?: string;
@@ -332,6 +370,8 @@ interface ChangeStatusMetadata extends ExistingChangeMetadata {
   stale_history: StaleHistoryEntry[];
   artifacts: ChangeArtifactsMetadata;
   stress_tests: StressTestRecords;
+  auto_advance: AutoAdvanceFlags;
+  runs: PhaseRun[];
   knowledge?: KnowledgeMetadata;
   created_at?: string;
   updated_at?: string;
@@ -349,6 +389,7 @@ export async function createChange(options: CreateChangeOptions): Promise<Change
   const slug = normalizeChangeSlug(options.slug ?? title);
   const id = await generateChangeId(targets, slug, now, options.randomId ?? randomChangeIdPart);
   const branch = changeBranch(id);
+  const autoAdvance = options.autoAdvance === false ? {} : autoAdvanceDefaults[type];
 
   await assertGitTargets(targets);
   await assertChangeMissing(targets, id);
@@ -360,7 +401,7 @@ export async function createChange(options: CreateChangeOptions): Promise<Change
     const changePath = changeDir(target.path, id);
     await mkdir(changePath, { recursive: false });
     await mkdir(path.join(changePath, "sessions"));
-    await writeFile(path.join(changePath, "status.yml"), statusTemplate({ id, slug, title, type, branch, now }));
+    await writeFile(path.join(changePath, "status.yml"), statusTemplate({ id, slug, title, type, branch, autoAdvance, now }));
     // Feature changes scaffold exploration.md and start at `stage: exploration`. Non-feature
     // changes start at `stage: started` with no exploration artifact; their first real artifact
     // is created later by the fitting skill (weave-architect, weave-issues, or weave-prd).
@@ -370,7 +411,7 @@ export async function createChange(options: CreateChangeOptions): Promise<Change
     results.push({ path: target.path, changePath, branch, branchStatus, current: true });
   }
 
-  return summarizeChangeOperation({ id, slug, title, type, branch, targets: results, verb: "Created" });
+  return summarizeChangeOperation({ id, slug, title, type, branch, autoAdvance, targets: results, verb: "Created" });
 }
 
 export async function listChanges(options: ListChangesOptions): Promise<ChangeListResult> {
@@ -730,6 +771,247 @@ export async function verdictChange(options: VerdictChangeOptions): Promise<Verd
   };
 }
 
+export interface AutoAdvanceChangeOptions {
+  cwd: string;
+  // Omit both to read every flag; give a transition alone to read one.
+  transition?: string;
+  enabled?: boolean;
+  now?: Date;
+  sessionPath?: string;
+}
+
+export interface AutoAdvanceTransitionState {
+  transition: LifecycleTransitionId;
+  from: ChangeStage;
+  to: ChangeStage;
+  skill: string;
+  enabled: boolean;
+  allowed: boolean;
+  human_decision?: string;
+}
+
+export interface AutoAdvanceChangeResult {
+  status: "ok";
+  target: ChangeTarget;
+  change: ChangeSummary;
+  updated?: LifecycleTransitionId;
+  transitions: AutoAdvanceTransitionState[];
+  message: string;
+}
+
+export async function autoAdvanceChange(options: AutoAdvanceChangeOptions): Promise<AutoAdvanceChangeResult> {
+  const transitionId = options.transition === undefined ? undefined : parseTransitionId(options.transition);
+  if (transitionId && options.enabled === true && lifecycleTransition(transitionId).humanDecision) {
+    throw new ChangeCommandError(
+      "transition_needs_human",
+      `${transitionId} cannot auto-advance: ${lifecycleTransition(transitionId).humanDecision}.`,
+      { transition: transitionId },
+    );
+  }
+
+  const context = await activeChangeContext(options);
+  let change = context.change;
+  if (transitionId && options.enabled !== undefined && !lifecycleTransition(transitionId).humanDecision) {
+    const now = options.now ?? new Date();
+    const statusPath = path.join(context.change.changePath, "status.yml");
+    const raw = await readStatusFile(statusPath);
+    const flags = { ...context.change.auto_advance, [transitionId]: options.enabled };
+    await writeFile(statusPath, YAML.stringify({ ...raw, auto_advance: normalizeAutoAdvanceFlags(flags), updated_at: now.toISOString() }));
+    change = await activeChangeSummary(context);
+  }
+
+  const transitions = lifecycleTransitionIds
+    .filter((id) => !transitionId || id === transitionId)
+    .map((id) => autoAdvanceTransitionState(id, change.auto_advance));
+  const updated = transitionId && options.enabled !== undefined ? transitionId : undefined;
+
+  return {
+    status: "ok",
+    target: context.target,
+    change,
+    ...(updated ? { updated } : {}),
+    transitions,
+    message: formatAutoAdvanceMessage(change, transitions, updated),
+  };
+}
+
+export interface StartChangeRunOptions {
+  cwd: string;
+  lane: ChangeStage;
+  skill: string;
+  agent: string;
+  sessionId?: string;
+  trigger?: RunTrigger;
+  transition?: LifecycleTransitionId;
+  upstreamUpdatedAt?: string;
+  now?: Date;
+  randomId?: () => string;
+  sessionPath?: string;
+}
+
+export interface ChangeRunResult {
+  status: "ok";
+  target: ChangeTarget;
+  change: ChangeSummary;
+  run: PhaseRun;
+  message: string;
+}
+
+export async function startChangeRun(options: StartChangeRunOptions): Promise<ChangeRunResult> {
+  const now = options.now ?? new Date();
+  const context = await activeChangeContext(options);
+
+  const run: PhaseRun = {
+    id: `${options.lane}-${formatRunTimestamp(now)}-${(options.randomId ?? randomChangeIdPart)()}`,
+    lane: options.lane,
+    skill: options.skill,
+    agent: options.agent,
+    ...(options.sessionId ? { session_id: options.sessionId } : {}),
+    trigger: options.trigger ?? "manual",
+    ...(options.transition ? { transition: options.transition } : {}),
+    ...(options.upstreamUpdatedAt ? { upstream_updated_at: options.upstreamUpdatedAt } : {}),
+    started_at: now.toISOString(),
+    finished_at: null,
+    result: "running",
+  };
+  const statusPath = path.join(context.change.changePath, "status.yml");
+  const raw = await readStatusFile(statusPath);
+  await writeFile(statusPath, YAML.stringify({ ...raw, runs: [...context.change.runs, run], updated_at: now.toISOString() }));
+  const change = await activeChangeSummary(context);
+
+  return {
+    status: "ok",
+    target: context.target,
+    change,
+    run,
+    message: `Started run ${run.id}: ${run.skill} for ${run.lane} (${run.agent}).`,
+  };
+}
+
+export interface FinishChangeRunOptions {
+  cwd: string;
+  runId: string;
+  result: FinishedRunResult;
+  sessionId?: string;
+  now?: Date;
+  sessionPath?: string;
+}
+
+export async function finishChangeRun(options: FinishChangeRunOptions): Promise<ChangeRunResult> {
+  const now = options.now ?? new Date();
+  const context = await activeChangeContext(options);
+  const existing = context.change.runs.find((run) => run.id === options.runId);
+  if (!existing) {
+    throw new ChangeCommandError("run_not_found", `No run ${options.runId} recorded for ${context.change.id}.`, { run: options.runId });
+  }
+  if (existing.result !== "running") {
+    throw new ChangeCommandError("run_already_finished", `Run ${options.runId} already finished as ${existing.result}.`, { run: existing });
+  }
+
+  const run: PhaseRun = {
+    ...existing,
+    ...(options.sessionId ? { session_id: options.sessionId } : {}),
+    finished_at: now.toISOString(),
+    result: options.result,
+  };
+  const statusPath = path.join(context.change.changePath, "status.yml");
+  const raw = await readStatusFile(statusPath);
+  const runs = context.change.runs.map((candidate) => (candidate.id === run.id ? run : candidate));
+  await writeFile(statusPath, YAML.stringify({ ...raw, runs, updated_at: now.toISOString() }));
+  const change = await activeChangeSummary(context);
+
+  return {
+    status: "ok",
+    target: context.target,
+    change,
+    run,
+    message: `Finished run ${run.id}: ${run.result}.`,
+  };
+}
+
+export interface ListChangeRunsResult {
+  status: "ok";
+  target: ChangeTarget;
+  change_id: string;
+  runs: PhaseRun[];
+  message: string;
+}
+
+export async function listChangeRuns(options: CurrentChangeOptions): Promise<ListChangeRunsResult> {
+  const context = await activeChangeContext(options);
+  const runs = context.change.runs;
+  return {
+    status: "ok",
+    target: context.target,
+    change_id: context.change.id,
+    runs,
+    message:
+      runs.length === 0
+        ? `No runs recorded for ${context.change.id}.`
+        : [
+            `Runs for ${context.change.id}:`,
+            ...runs.map(
+              (run) =>
+                `  ${run.id}  ${run.skill}  ${run.agent}  ${run.result}  ${run.started_at}${run.finished_at ? ` -> ${run.finished_at}` : ""}`,
+            ),
+          ].join("\n"),
+  };
+}
+
+async function activeChangeSummary(context: ActiveChangeContext): Promise<ChangeSummary> {
+  const updated = await readChangeMetadata(context.change.changePath, context.change.id);
+  return {
+    ...updated,
+    path: context.change.path,
+    changePath: context.change.changePath,
+    active: true,
+  };
+}
+
+function parseTransitionId(value: string): LifecycleTransitionId {
+  if (isLifecycleTransitionId(value)) {
+    return value;
+  }
+  throw new ChangeCommandError(
+    "unknown_transition",
+    `Unknown transition: ${value}. Expected ${lifecycleTransitionIds.join(", ")}`,
+    { transition: value, supported: lifecycleTransitionIds },
+  );
+}
+
+function autoAdvanceTransitionState(id: LifecycleTransitionId, flags: AutoAdvanceFlags): AutoAdvanceTransitionState {
+  const transition = lifecycleTransition(id);
+  return {
+    transition: id,
+    from: transition.from,
+    to: transition.to,
+    skill: transition.skill,
+    enabled: !transition.humanDecision && flags[id] === true,
+    allowed: !transition.humanDecision,
+    ...(transition.humanDecision ? { human_decision: transition.humanDecision } : {}),
+  };
+}
+
+function formatAutoAdvanceMessage(
+  change: ChangeSummary,
+  transitions: AutoAdvanceTransitionState[],
+  updated?: LifecycleTransitionId,
+): string {
+  const width = Math.max(...transitions.map((state) => state.transition.length));
+  return [
+    updated ? `Auto-advance ${updated} is now ${change.auto_advance[updated] ? "on" : "off"} for ${change.id}.` : `Auto-advance for ${change.id}:`,
+    ...transitions.map((state) =>
+      state.allowed
+        ? `  ${state.transition.padEnd(width)}  ${(state.enabled ? "on" : "off").padEnd(5)}  ${state.from} -> ${state.to} (${state.skill})`
+        : `  ${state.transition.padEnd(width)}  never  ${state.from} -> ${state.to}: ${state.human_decision}`,
+    ),
+  ].join("\n");
+}
+
+function formatRunTimestamp(now: Date): string {
+  return now.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "");
+}
+
 export async function knowledgeChange(options: KnowledgeChangeOptions): Promise<KnowledgeChangeResult> {
   const now = options.now ?? new Date();
   const context = await activeChangeContext(options);
@@ -919,6 +1201,8 @@ async function readChangeMetadata(changePath: string, fallbackId: string): Promi
     stale_history: parseStaleHistory(parsed?.stale_history),
     artifacts: parseArtifactsMetadata(parsed?.artifacts),
     stress_tests: parseStressTests(parsed?.stress_tests, parseArtifactsMetadata(parsed?.artifacts)),
+    auto_advance: parseAutoAdvanceFlags(parsed?.auto_advance),
+    runs: parseRuns(parsed?.runs),
     knowledge: parseKnowledgeMetadata(parsed?.knowledge),
     branch,
     created_at: typeof parsed?.created_at === "string" ? parsed.created_at : undefined,
@@ -1034,6 +1318,58 @@ function parseStressTests(value: unknown, artifacts: ChangeArtifactsMetadata): S
   }
 
   return records;
+}
+
+// Missing or unknown flags read as off, and transitions that need a human decision can
+// never read as on, even if status.yml was edited by hand.
+function parseAutoAdvanceFlags(value: unknown): AutoAdvanceFlags {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const flags: AutoAdvanceFlags = {};
+  for (const transition of autoAdvanceTransitions) {
+    if (typeof value[transition.id] === "boolean") {
+      flags[transition.id] = value[transition.id] as boolean;
+    }
+  }
+  return flags;
+}
+
+function parseRuns(value: unknown): PhaseRun[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const runs: PhaseRun[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const lane = typeof entry.lane === "string" ? normalizeChangeStage(entry.lane) : undefined;
+    if (
+      typeof entry.id !== "string" ||
+      !lane ||
+      typeof entry.skill !== "string" ||
+      typeof entry.agent !== "string" ||
+      typeof entry.started_at !== "string" ||
+      !isRunResult(entry.result)
+    ) {
+      continue;
+    }
+    runs.push({
+      id: entry.id,
+      lane,
+      skill: entry.skill,
+      agent: entry.agent,
+      ...(typeof entry.session_id === "string" ? { session_id: entry.session_id } : {}),
+      trigger: isRunTrigger(entry.trigger) ? entry.trigger : "manual",
+      ...(isLifecycleTransitionId(entry.transition) ? { transition: entry.transition } : {}),
+      ...(typeof entry.upstream_updated_at === "string" ? { upstream_updated_at: entry.upstream_updated_at } : {}),
+      started_at: entry.started_at,
+      finished_at: typeof entry.finished_at === "string" ? entry.finished_at : null,
+      result: entry.result,
+    });
+  }
+  return runs;
 }
 
 function parseKnowledgeMetadata(value: unknown): KnowledgeMetadata | undefined {
@@ -1371,7 +1707,15 @@ function inferChangeFromBranch(changes: ChangeSummary[], branch: string): Change
   return changes.find((change) => change.id === id);
 }
 
-function statusTemplate(input: { id: string; slug: string; title: string; type: ChangeType; branch: string; now: Date }): string {
+function statusTemplate(input: {
+  id: string;
+  slug: string;
+  title: string;
+  type: ChangeType;
+  branch: string;
+  autoAdvance: AutoAdvanceFlags;
+  now: Date;
+}): string {
   return YAML.stringify({
     version: 1,
     id: input.id,
@@ -1380,6 +1724,7 @@ function statusTemplate(input: { id: string; slug: string; title: string; type: 
     type: input.type,
     stage: input.type === "feat" ? "exploration" : "started",
     branch: input.branch,
+    auto_advance: normalizeAutoAdvanceFlags(input.autoAdvance),
     created_at: input.now.toISOString(),
     updated_at: input.now.toISOString(),
   });
@@ -1490,6 +1835,7 @@ function summarizeChangeOperation(input: {
   title: string;
   type: ChangeType;
   branch: string;
+  autoAdvance: AutoAdvanceFlags;
   targets: ChangeTargetResult[];
   verb: string;
 }): ChangeOperationResult {
@@ -1499,6 +1845,7 @@ function summarizeChangeOperation(input: {
     `Title: ${input.title}`,
     `Type: ${input.type}`,
     `Branch: ${input.branch}`,
+    ...formatAutoAdvanceLines(input.autoAdvance),
     "",
     "Targets:",
     ...input.targets.map((target) => `  ${target.path} (${formatBranchStatus(target.branchStatus)}, current)`),
@@ -1511,6 +1858,7 @@ function summarizeChangeOperation(input: {
     title: input.title,
     type: input.type,
     branch: input.branch,
+    auto_advance: normalizeAutoAdvanceFlags(input.autoAdvance),
     targets: input.targets,
     message: lines.join("\n"),
   };
@@ -1601,6 +1949,8 @@ function formatStatusTarget(target: StatusChangeTargetResult): string {
     `Stage: ${target.change.stage}`,
     ...formatStaleLines(target.change.stale),
     ...formatStressTestLines(target.change.stress_tests),
+    ...formatAutoAdvanceLines(target.change.auto_advance),
+    ...formatRunLines(target.change.runs),
     ...formatKnowledgeLines(target.change.knowledge),
     `Branch: ${target.change.branch}`,
     `Path: ${target.change.path}`,
@@ -1648,6 +1998,19 @@ function formatStressTestLines(stressTests: StressTestRecords): string[] {
     const record = stressTests[lane];
     return record ? [`Stress test (${lane}): ${record.verdict}${record.outdated ? " (outdated: shape changed since)" : ""}`] : [];
   });
+}
+
+function formatAutoAdvanceLines(flags: AutoAdvanceFlags): string[] {
+  const enabled = autoAdvanceTransitions.filter((transition) => flags[transition.id]).map((transition) => transition.id);
+  return [`Auto-advance: ${enabled.length > 0 ? `${enabled.join(", ")} on` : "off"}`];
+}
+
+function formatRunLines(runs: PhaseRun[]): string[] {
+  const latest = runs.at(-1);
+  if (!latest) {
+    return [];
+  }
+  return [`Last run: ${latest.skill} (${latest.lane}) ${latest.result}, started ${latest.started_at}`];
 }
 
 function formatKnowledgeLines(knowledge: KnowledgeMetadata | undefined): string[] {
@@ -1734,6 +2097,14 @@ export function isStressTestLane(value: unknown): value is StressTestLane {
 
 export function isStressTestVerdict(value: unknown): value is StressTestVerdict {
   return typeof value === "string" && (stressTestVerdicts as readonly string[]).includes(value);
+}
+
+export function isRunResult(value: unknown): value is RunResult {
+  return typeof value === "string" && (runResults as readonly string[]).includes(value);
+}
+
+export function isRunTrigger(value: unknown): value is RunTrigger {
+  return typeof value === "string" && (runTriggers as readonly string[]).includes(value);
 }
 
 export function isKnowledgeStatus(value: unknown): value is KnowledgeStatus {

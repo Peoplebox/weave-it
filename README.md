@@ -30,6 +30,7 @@ Lanes can be skipped when a change does not need them. Cross-cutting helpers (`w
   - `weave-questions` writes `questions.md`: two to eight descriptive questions about the current code, docs, and dependencies. They never describe the planned change.
   - `weave-research` answers them in `research.md`, ideally in a fresh session, using read-only research sub-agents. It reads only `questions.md`, so the research stays objective.
   - Progressing these lanes never moves `stage`; they feed later lanes as `--source research`.
+  - With `questions_to_research` on (the default), `weave-questions` hands off to `weave advance`, which starts `weave-research` in a fresh background session.
 - **exploration** — brainstorm product directions and settle on a product shape.
   - Skill: `weave-explore`. Opens with two to four directions, talks them through in plain product language, and writes the shape to `exploration.md` once you pick one.
 - **prd** — write the requirements from the agreed product shape in `prd.md`.
@@ -54,7 +55,7 @@ Between a shape and the lane that builds on it sits a **stress test**:
 Helper skills:
 
 - `weave-new` — create a change from a title or topic and recommend the first lane skill.
-- `weave-next` — read-only advisory: what skill to run next for the active change, including stale lanes and stress test gates.
+- `weave-next` — read-only advisory: what skill to run next for the active change, including stale lanes, stress test gates, and whether [auto-advance](#auto-advance) will start it.
 - `weave-capture` — persist discussion into session notes and/or live artifacts (see [Skills In Depth](#skills-in-depth)).
 - `weave-clarify` — focused amendment of one existing artifact when scope or decisions change midstream (see [Skills In Depth](#skills-in-depth)).
 
@@ -427,6 +428,11 @@ weave change clear-stale <lane> [options]
 weave change switch <change> [options]
 weave change knowledge <status> [options]
 weave change verdict <lane> <verdict> [options]
+weave change auto-advance [transition] [on|off] [options]
+weave change runs [options]
+weave change run start <lane> --skill <skill> --agent <agent> [options]
+weave change run finish <run-id> --result <result> [options]
+weave advance [options]
 ```
 
 `weave change new` creates a change id in the form `{YYMMDD}-{XXXX}-{slug}`, writes `status.yml`, creates or checks out the matching git branch, and scaffolds the first artifact when applicable:
@@ -437,6 +443,7 @@ change/{change-id}
 
 - `--type feat` (default): scaffolds `exploration.md` and starts at `stage: exploration`.
 - Non-feature types (`fix`, `refactor`, `docs`, `test`, `ci`, `chore`): start at `stage: started` with no scaffolded artifact.
+- Every type writes the proposed auto-advance flags for its type into `status.yml` (`questions_to_research` on). `--no-auto-advance` starts with all of them off. See [Auto-advance](#auto-advance).
 
 The active change is **branch-derived**: checking out `change/<change-id>` is authoritative. Weave does not write active-change routing into committed files.
 
@@ -573,6 +580,40 @@ stress_tests:
 ```
 
 When the lane is progressed again, `weave change status` reports the verdict as outdated (`Stress test (exploration): holds (outdated: shape changed since)`), and `weave-next`, `weave-prd`, and `weave-slices` ask for a fresh stress test. `waived` requires `--reason`; skills record a waiver only when the user explicitly asks to skip the stress test.
+
+### Auto-advance
+
+`weave advance` starts the next lifecycle phase of the active change in a fresh, non-interactive agent session, so a phase that needs no decisions from you does not wait for you to open a new session.
+
+Each transition between lanes has a flag under `status.yml.auto_advance`:
+
+```yaml
+auto_advance:
+  questions_to_research: true
+  findings_to_questions: false
+```
+
+Missing flags read as off. `weave change auto-advance` lists every transition; `weave change auto-advance <transition> on|off` sets one. Transitions that need your decisions are listed as `never` and cannot be turned on: anything into or out of `weave-explore`, `weave-architect`, or `weave-stress-test`, and `prd_to_architecture`.
+
+`weave advance` starts a phase only when every condition holds:
+
+1. `flag`: the transition's flag is on.
+2. `progressed`: the upstream lane was recorded with `weave change progress`.
+3. `fresh`: the upstream lane is not stale.
+4. `artifact`: the upstream artifact (for example `questions.md`) has substantive content.
+5. `verdict`: any stress test verdict the next skill gates on is current and passing.
+6. `not_started`: no run of the next lane has started since that progress, none is still running, and the next lane was not already progressed after it.
+
+```bash
+weave advance --dry-run          # print each condition and the decision
+weave advance                    # run the phase and wait for it
+weave advance --detach           # run it in the background (what weave-questions uses)
+weave advance --transition questions_to_research --once
+```
+
+Every phase run is logged under `status.yml.runs` with `lane`, `skill`, `agent`, `session_id`, `trigger`, `transition`, `upstream_updated_at`, `started_at`, `finished_at`, and `result`. A run `succeeded` when the session exited cleanly and progressed its lane, is `incomplete` when it exited cleanly without progress, and `failed` otherwise. Because a run pins the upstream progress it answered, the same update never starts a phase twice; `--retry-failed` lets a failed run start again. Skills started by hand can log runs with `weave change run start` and `weave change run finish`. Session output goes to `~/.weave/runs/<change-id>/<run-id>.log`.
+
+Sessions are launched through an agent adapter (`--agent`, default `claude`, which runs `claude -p "use the <skill> skill for change <id>"` with a Weave-chosen `--session-id`). A non-interactive session cannot ask for permissions, so allow it to edit the change folder and run `weave` in your agent's settings, or pass `--permission-mode <mode>`.
 
 If a target is not a git repo, Weave still writes the change artifacts and reports branch creation as skipped. `switch` blocks when affected git repos have uncommitted changes; `new` does not block so already-started local work can be captured as a new change.
 

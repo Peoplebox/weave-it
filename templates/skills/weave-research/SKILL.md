@@ -152,12 +152,15 @@ Review it for accuracy before decisions build on it. You can ask for more resear
 There are <N> open questions. You can ask me to look for answers, answer them yourself, or tell me to drop them.
 
 Next step: <next skill>
+Auto-advance will not start it: <next skill> needs your decisions, so start it yourself in a fresh session.
 ```
 
 Choose `<next skill>` from the change type in `weave change status --json`:
 
 - `feat`: `weave-explore` to work through product behaviour, or `weave-prd` if the requirements are already clear.
 - any other type: `weave-architect` for diagnosis and technical design.
+
+Auto-advance never starts `weave-explore`, `weave-architect`, `weave-stress-test`, or anything after them, so do not run `weave advance` from this skill.
 
 ---
 

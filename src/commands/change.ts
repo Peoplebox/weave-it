@@ -33,12 +33,26 @@ import {
   type StressTestVerdict,
   verdictChange,
   type VerdictChangeResult,
+  autoAdvanceChange,
+  type AutoAdvanceChangeResult,
+  type ChangeRunResult,
+  finishChangeRun,
+  isRunResult,
+  isRunTrigger,
+  listChangeRuns,
+  type ListChangeRunsResult,
+  runResults,
+  runTriggers,
+  type FinishedRunResult,
+  type RunTrigger,
+  startChangeRun,
 } from "../lib/changes.js";
 import { withNotices } from "../lib/with-notices.js";
 
 interface ChangeNewOptions {
   slug?: string;
   type?: ChangeType;
+  autoAdvance?: boolean;
   json?: boolean;
 }
 
@@ -71,6 +85,18 @@ interface ChangeKnowledgeOptions extends ChangeStatusOptions {
   invalidatedBy?: string;
 }
 
+interface ChangeRunStartOptions extends ChangeStatusOptions {
+  skill: string;
+  agent: string;
+  session?: string;
+  trigger?: RunTrigger;
+}
+
+interface ChangeRunFinishOptions extends ChangeStatusOptions {
+  result: FinishedRunResult;
+  session?: string;
+}
+
 interface ChangeVerdictOptions extends ChangeStatusOptions {
   reason?: string;
   session?: string;
@@ -85,6 +111,7 @@ export function changeCommand(): Command {
     .argument("<title>", "change title")
     .option("--type <type>", "change type: feat, fix, refactor, docs, test, ci, or chore", parseChangeType, "feat")
     .option("--slug <slug>", "change slug override")
+    .option("--no-auto-advance", "start with every auto-advance transition off instead of the type defaults")
     .option("--json", "print machine-readable JSON")
     .action(async (title: string, options: ChangeNewOptions) => {
       const json = options.json ?? false;
@@ -95,6 +122,7 @@ export function changeCommand(): Command {
             title,
             type: options.type,
             slug: options.slug,
+            autoAdvance: options.autoAdvance,
           });
           return { json: result, text: result.message };
         });
@@ -210,6 +238,77 @@ export function changeCommand(): Command {
     });
 
   command
+    .command("auto-advance")
+    .description("Show or set which lifecycle transitions `weave advance` may start on its own.")
+    .argument("[transition]", "transition id, e.g. questions_to_research")
+    .argument("[state]", "on or off", parseOnOff)
+    .option("--json", "print machine-readable JSON")
+    .action(async (transition: string | undefined, state: boolean | undefined, options: ChangeStatusOptions) => {
+      await runAction(options.json ?? false, async () => {
+        const result = await autoAdvanceChange({
+          cwd: process.cwd(),
+          transition,
+          enabled: state,
+        });
+        writeResult(result, options.json ?? false);
+      });
+    });
+
+  command
+    .command("runs")
+    .description("List the phase runs recorded for the active change.")
+    .option("--json", "print machine-readable JSON")
+    .action(async (options: ChangeStatusOptions) => {
+      await runAction(options.json ?? false, async () => {
+        writeResult(await listChangeRuns({ cwd: process.cwd() }), options.json ?? false);
+      });
+    });
+
+  const run = command.command("run").description("Record phase runs for the active change.");
+
+  run
+    .command("start")
+    .description("Record that a skill session started for a lane.")
+    .argument("<lane>", "lane the session works on", parseChangeStage)
+    .requiredOption("--skill <skill>", "skill the session runs, e.g. weave-research")
+    .requiredOption("--agent <agent>", "agent running the session, e.g. claude")
+    .option("--session <id>", "agent session id, when known")
+    .option("--trigger <trigger>", `what started the session: ${runTriggers.join(" or ")}`, parseRunTrigger, "manual")
+    .option("--json", "print machine-readable JSON")
+    .action(async (lane: ChangeStage, options: ChangeRunStartOptions) => {
+      await runAction(options.json ?? false, async () => {
+        const result = await startChangeRun({
+          cwd: process.cwd(),
+          lane,
+          skill: options.skill,
+          agent: options.agent,
+          sessionId: options.session,
+          trigger: options.trigger,
+        });
+        writeResult(result, options.json ?? false);
+      });
+    });
+
+  run
+    .command("finish")
+    .description("Record how a phase run ended.")
+    .argument("<run-id>", "run id from `weave change run start` or `weave change runs`")
+    .requiredOption("--result <result>", `result: ${finishedRunResults().join(", ")}`, parseFinishedRunResult)
+    .option("--session <id>", "agent session id, when it was not known at start")
+    .option("--json", "print machine-readable JSON")
+    .action(async (runId: string, options: ChangeRunFinishOptions) => {
+      await runAction(options.json ?? false, async () => {
+        const result = await finishChangeRun({
+          cwd: process.cwd(),
+          runId,
+          result: options.result,
+          sessionId: options.session,
+        });
+        writeResult(result, options.json ?? false);
+      });
+    });
+
+  command
     .command("knowledge")
     .description("Record knowledge freshness for the active change.")
     .argument("<status>", "knowledge status: pending, stale, updated, or none", parseKnowledgeStatus)
@@ -252,6 +351,30 @@ export function changeCommand(): Command {
     });
 
   return command;
+}
+
+function parseOnOff(value: string): boolean {
+  if (value === "on") return true;
+  if (value === "off") return false;
+  throw new InvalidArgumentError(`Expected on or off, got: ${value}`);
+}
+
+function parseRunTrigger(value: string): RunTrigger {
+  if (isRunTrigger(value)) {
+    return value;
+  }
+  throw new InvalidArgumentError(`Unsupported trigger: ${value}. Expected ${runTriggers.join(" or ")}`);
+}
+
+function finishedRunResults(): FinishedRunResult[] {
+  return runResults.filter((result): result is FinishedRunResult => result !== "running");
+}
+
+function parseFinishedRunResult(value: string): FinishedRunResult {
+  if (isRunResult(value) && value !== "running") {
+    return value;
+  }
+  throw new InvalidArgumentError(`Unsupported result: ${value}. Expected ${finishedRunResults().join(", ")}`);
 }
 
 function parseKnowledgeStatus(value: string): KnowledgeStatus {
@@ -329,7 +452,10 @@ function writeResult(
     | ProgressChangeResult
     | KnowledgeChangeResult
     | ClearChangeStalenessResult
-    | VerdictChangeResult,
+    | VerdictChangeResult
+    | AutoAdvanceChangeResult
+    | ChangeRunResult
+    | ListChangeRunsResult,
   json: boolean,
 ): void {
   if (json) {
@@ -340,7 +466,7 @@ function writeResult(
   process.stdout.write(`${result.message}\n`);
 }
 
-async function runAction(json: boolean, action: () => Promise<void>): Promise<void> {
+export async function runAction(json: boolean, action: () => Promise<void>): Promise<void> {
   try {
     await action();
   } catch (error) {

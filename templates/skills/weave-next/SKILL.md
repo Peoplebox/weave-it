@@ -25,6 +25,7 @@ Use this skill when the user wants to know what command to run next for an activ
 - Use live artifacts as canonical current truth.
 - Use session notes only for resume points, rationale, unresolved context, and newer explicit user decisions.
 - Mention `weave-capture` only as an optional checkpoint when there is useful current discussion context to preserve.
+- Run `weave advance` only with `--dry-run`; never start a phase from this skill.
 
 # Resolve Context
 
@@ -39,6 +40,8 @@ Resolve the active change for the current cwd-dispatched workspace or repo conte
 ```bash
 weave change current --json
 weave change status --json
+weave advance --dry-run --json
+weave change runs --json
 ```
 
 If no active change exists, stop and say:
@@ -178,6 +181,14 @@ When resume and forward recommendations differ, make the resume command primary 
 
 When there is no valid resume context, make the type-aware recommendation primary.
 
+Auto-advance recommendation (from `weave advance --dry-run --json` and `weave change runs --json`):
+
+- A `running` run for the lane you would recommend -> say that phase is already running in a background session (run id, skill, started time) and recommend waiting for it; never recommend starting it again.
+- The dry run fires (`"fired": true`) -> keep the recommended skill, and say that auto-advance is on for that transition, so `weave advance` will start it in a fresh session; the user can also run it themselves.
+- The latest run for the lane is `incomplete` or `failed` -> mention it and recommend running the skill in a fresh session; for `failed`, `weave advance --retry-failed` also works.
+- The recommended skill is `weave-explore`, `weave-architect`, `weave-stress-test`, `weave-prd` for `feat`, or `weave-slices` -> say auto-advance never starts it because it needs the user's decisions.
+- Flags that are off -> mention them only when the user asks how to automate the next step: `weave change auto-advance <transition> on`.
+
 # Output Format
 
 Use these headings when relevant and keep them easy to scan:
@@ -199,6 +210,10 @@ In `Current Change`, include change id, title when available, target repo or rep
 In `Artifact State`, summarize `questions.md` and `research.md` when present, then `exploration.md` (with PRD Readiness), `prd.md`, the architecture artifact (with Slices Readiness), and slice or task evidence.
 
 In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present, and each stress test verdict when `status.yml.stress_tests` is present (say when one is outdated).
+
+In `Artifact State`, also name the auto-advance transitions that are on and the latest run when `status.yml.runs` is present.
+
+In `Recommended Next Step`, say whether auto-advance will start it, using the auto-advance recommendation rules.
 
 In `Resume Context`, include the latest relevant `Next Resume Point` when present.
 

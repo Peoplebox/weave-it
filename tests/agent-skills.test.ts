@@ -295,6 +295,8 @@ describe("agent skills", () => {
     expect(skill.content).toContain("Recommended Next Step");
     expect(skill.content).toContain("Alternate Pipeline Step");
     expect(skill.content).toContain("Optional Checkpoint");
+    expect(skill.content).toContain("weave advance --dry-run --json");
+    expect(skill.content).toContain("Run `weave advance` only with `--dry-run`; never start a phase from this skill.");
     expect(skill.content).not.toContain("Before writing the live artifact, inspect pending session notes for the selected lane");
     expect(skill.sourcePath).toContain(path.join("templates", "skills", "weave-next", "SKILL.md"));
     expect(skill.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -399,6 +401,8 @@ describe("agent skills", () => {
     expect(skill.content).toContain("wiki/changes/<change-id>/questions.md");
     expect(skill.content).toContain("weave change progress questions --source discussion --json");
     expect(skill.content).toContain("Next step: start a fresh session and run weave-research.");
+    expect(skill.content).toContain("weave advance --transition questions_to_research --detach --json");
+    expect(skill.content).toContain("Auto-advance started weave-research in a fresh background session (run <run-id>).");
     expect(skill.content).toContain("ask what should be built, changed, or improved");
     await expect(
       readFile(path.join(process.cwd(), "templates", "skills", "weave-questions", "questions-template.md"), "utf8"),
@@ -411,6 +415,7 @@ describe("agent skills", () => {
     expect(skill.content).toContain("Read `wiki/changes/<change-id>/questions.md` in full. It is the research brief.");
     expect(skill.content).toContain("Do not read `exploration.md`, `prd.md`, `findings.md`, `architecture/`, `sessions/`, or tickets");
     expect(skill.content).toContain("weave change progress research --source questions --source codebase --json");
+    expect(skill.content).toContain("Auto-advance will not start it: <next skill> needs your decisions");
     for (const subagent of researchSubagentNames) {
       expect(skill.content).toContain(`\`${subagent}\``);
     }

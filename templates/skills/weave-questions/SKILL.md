@@ -87,6 +87,16 @@ weave change progress questions --source discussion --json
 
 Add `--source exploration` when `exploration.md` informed the questions.
 
+# Auto-Advance
+
+After progress is recorded, let Weave decide whether to start research on its own:
+
+```bash
+weave advance --transition questions_to_research --detach --json
+```
+
+It starts `weave-research` in a fresh background session only when `auto_advance.questions_to_research` is on for this change, the questions lane was just recorded and is not stale, `questions.md` has substantive content, and no research run has started since this progress. Otherwise it starts nothing and returns `"fired": false`. Run it once; never retry it, and never start `weave-research` in this session yourself.
+
 # Lifecycle Staleness Verification
 
 Before calling `weave change progress`, verify content-sync of every artifact
@@ -136,7 +146,20 @@ not.
 
 # Final Response
 
-Reply with exactly this shape and nothing else:
+Reply with exactly one of these shapes and nothing else.
+
+When `weave advance` returned `"fired": true`:
+
+```text
+Wrote <N> research questions to wiki/changes/<change-id>/questions.md.
+
+You don't need to answer them. They tell weave-research what to look up.
+
+Auto-advance started weave-research in a fresh background session (run <run-id>).
+Check on it with `weave change runs`, and review research.md once it finishes.
+```
+
+Otherwise:
 
 ```text
 Wrote <N> research questions to wiki/changes/<change-id>/questions.md.
@@ -146,6 +169,8 @@ You don't need to answer them. They tell weave-research what to look up.
 Next step: start a fresh session and run weave-research.
 (A fresh session keeps the research independent of this conversation about what to build.)
 ```
+
+When the result's conditions include `auto_advance.questions_to_research is off`, add one last line: `To have Weave start research for you next time, run: weave change auto-advance questions_to_research on`.
 
 ---
 
