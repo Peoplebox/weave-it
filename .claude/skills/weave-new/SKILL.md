@@ -43,7 +43,7 @@ Use `--slug <slug>` only when the user requested a specific folder or branch slu
 - The created branch is `change/{change-id}`.
 - Do not create `prd.md`.
 - For `feat` changes, the CLI scaffolds `exploration.md` and starts at `stage: exploration`; treat `exploration.md` as the first artifact.
-- For non-feature changes (`fix`, `refactor`, `docs`, `test`, `ci`, `chore`), the CLI does not scaffold `exploration.md` and starts at `stage: started`. The first real artifact is created later by the fitting skill: `weave-architect` for diagnosis or RCA, `weave-issues` when the work is already clear, or `weave-prd`/`weave-explore` only when expected behavior is unclear.
+- For non-feature changes (`fix`, `refactor`, `docs`, `test`, `ci`, `chore`), the CLI does not scaffold `exploration.md` and starts at `stage: started`. The first real artifact is created later by the fitting skill: `weave-questions` then `weave-research` when the affected code needs to be understood first, `weave-architect` for diagnosis or technical design, `weave-slices` when the work is already clear, or `weave-explore`/`weave-prd` only when expected behavior is unclear. For bug reports, `weave-fix` is usually the better entry point than `weave-new`.
 - After creating a `feat` change that touches existing behaviour, suggest `weave-questions` then `weave-research` (in a fresh session) to build a current-state baseline, followed by `weave-explore` to brainstorm product directions. For greenfield work with no existing code to understand, suggest `weave-explore` directly. Do not do any research or product discovery yourself using this skill. After creating a non-feature change, recommend the fitting next skill instead of `weave-explore`.
 
 ---

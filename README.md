@@ -26,25 +26,35 @@ The active change is **branch-derived**: checking out `change/<change-id>` is ho
 
 Lanes can be skipped when a change does not need them. Cross-cutting helpers (`weave-new`, `weave-next`, `weave-capture`, `weave-clarify`) support the flow at any point.
 
-- **exploration** — stress-test product intent, workflows, and edge cases before requirements harden.
-  - Skill: `weave-explore` (Plan Mode; read-only interview, no artifact writes)
-- **prd** — write or revise user-facing requirements in `prd.md`.
-  - Skill: `weave-prd`
+- **questions** and **research** (evidence lanes) — document how the system works today before anything is designed.
+  - `weave-questions` writes `questions.md`: two to eight descriptive questions about the current code, docs, and dependencies. They never describe the planned change.
+  - `weave-research` answers them in `research.md`, ideally in a fresh session, using read-only research sub-agents. It reads only `questions.md`, so the research stays objective.
+  - Progressing these lanes never moves `stage`; they feed later lanes as `--source research`.
+- **exploration** — brainstorm product directions and settle on a product shape.
+  - Skill: `weave-explore`. Opens with two to four directions, talks them through in plain product language, and writes the shape to `exploration.md` once you pick one.
+- **prd** — write the requirements from the agreed product shape in `prd.md`.
+  - Skill: `weave-prd`. For `feat` changes it needs a passing stress test of the shape first, and asks only blocking questions.
 - **findings** — capture bug repro, scope, and root-cause notes for fix-type changes in `findings.md`.
   - Skill: `weave-fix` (chat-driven fix entry; also scaffolds an initial slice)
-- **architecture** — gather engineering context, tradeoffs, and technical risks; persist design through capture or clarify.
-  - Skill: `weave-architect` (Plan Mode; read-only thinking partner, no artifact writes)
+- **architecture** — compare technical approaches and settle on a technical shape.
+  - Skill: `weave-architect`. Opens with two to four approaches grounded in research and code, then writes `architecture/index.md` and facets once you pick one.
 - **slices** — scaffold `task-slices/<NN>-<slug>/` folders with slice narrative, contracts, and per-slice `tasks.md`.
-  - Skill: `weave-slices`
+  - Skill: `weave-slices`. For `feat` changes it needs a passing stress test of the architecture first.
 - **execution** — implement and verify selected tasks locally; update task evidence in `tasks.md`.
   - Skill: `weave-execute` (includes branch prep via `weave task prepare`)
 - **knowledge** (cross-cutting) — update current-state specs under `wiki/knowledge/**` and record change-local provenance in `knowledge-delta.md`.
   - Skill: `weave-knowledge`
 
+Between a shape and the lane that builds on it sits a **stress test**:
+
+- `weave-stress-test exploration` or `weave-stress-test architecture` has the read-only `weave-challenger` sub-agent attack the written shape using only that artifact, `research.md`, and the knowledge wiki — never the brainstorm conversation. It then interviews you on the weak points, writes the answers into the shape, and records a verdict with `weave change verdict`.
+- Verdicts are `holds`, `holds-with-changes`, `needs-reshaping`, or `waived` (skipped on request, with a reason). A verdict goes outdated automatically when its shape changes.
+- For `feat` changes, `weave-prd` and `weave-slices` require a current passing or waived verdict. For other change types the stress test is optional.
+
 Helper skills:
 
 - `weave-new` — create a change from a title or topic and recommend the first lane skill.
-- `weave-next` — read-only advisory: what skill to run next for the active change.
+- `weave-next` — read-only advisory: what skill to run next for the active change, including stale lanes and stress test gates.
 - `weave-capture` — persist discussion into session notes and/or live artifacts (see [Skills In Depth](#skills-in-depth)).
 - `weave-clarify` — focused amendment of one existing artifact when scope or decisions change midstream (see [Skills In Depth](#skills-in-depth)).
 
@@ -54,14 +64,21 @@ Feature change (`--type feat`, the default):
 
 ```mermaid
 flowchart LR
-  new["weave-new"] --> explore["exploration\nweave-explore"]
-  explore --> prd["prd\nweave-prd"]
+  new["weave-new"] --> questions["questions\nweave-questions"]
+  questions --> research["research\nweave-research"]
+  research --> explore["exploration\nweave-explore"]
+  explore --> st1["weave-stress-test\nexploration"]
+  st1 -- "needs-reshaping" --> explore
+  st1 --> prd["prd\nweave-prd"]
   prd --> arch["architecture\nweave-architect"]
-  arch --> capture["weave-capture"]
-  capture --> slices["slices\nweave-slices"]
+  arch --> st2["weave-stress-test\narchitecture"]
+  st2 -- "needs-reshaping" --> arch
+  st2 --> slices["slices\nweave-slices"]
   slices --> exec["execution\nweave-execute"]
   exec --> knowledge["knowledge\nweave-knowledge"]
 ```
+
+For greenfield work with no existing code to understand, skip `weave-questions` and `weave-research` and start at `weave-explore`. Run `weave-research` and each `weave-stress-test` in a fresh session so they stay independent of the conversation that came before.
 
 Fix change (`--type fix`):
 
@@ -69,13 +86,12 @@ Fix change (`--type fix`):
 flowchart LR
   fix["weave-fix"] --> findings["findings"]
   findings --> archOpt["architecture?\nweave-architect"]
-  archOpt --> capture["weave-capture"]
   findings --> slicesOpt["slices\nweave-slices"]
-  capture --> slicesOpt
+  archOpt --> slicesOpt
   slicesOpt --> exec["execution\nweave-execute"]
 ```
 
-Non-feature changes (`refactor`, `docs`, `test`, `ci`, `chore`) start at `stage: started` with no scaffolded artifact. The fitting skill creates the first durable artifact when work is clear enough.
+Non-feature changes (`refactor`, `docs`, `test`, `ci`, `chore`) start at `stage: started` with no scaffolded artifact. The fitting skill creates the first durable artifact when work is clear enough. `weave-questions` and `weave-research` work for any change type.
 
 Legacy flat changes with a single change-root `tasks.md` still execute through `weave-execute` in flat mode. New changes should use `weave-slices`. `weave-issues` is superseded by `weave-slices`; `weave-prepare` is deprecated (branch prep is built into `weave-execute`).
 
@@ -410,6 +426,7 @@ weave change progress <lane> [options]
 weave change clear-stale <lane> [options]
 weave change switch <change> [options]
 weave change knowledge <status> [options]
+weave change verdict <lane> <verdict> [options]
 ```
 
 `weave change new` creates a change id in the form `{YYMMDD}-{XXXX}-{slug}`, writes `status.yml`, creates or checks out the matching git branch, and scaffolds the first artifact when applicable:
@@ -442,8 +459,8 @@ Options for `list`, `current`, `status`, and `switch`:
 Options for `progress`:
 
 ```text
-lane                  exploration, prd, findings, architecture, or slices (issues accepted as alias for slices)
---source <source>     repeatable source dependency: exploration, prd, findings, architecture, discussion, sessions, or codebase
+lane                  questions, research, exploration, prd, findings, architecture, or slices (issues accepted as alias for slices)
+--source <source>     repeatable source dependency: questions, research, exploration, prd, architecture, discussion, sessions, or codebase
 --no-invalidate       suppress all downstream stale propagation for this call
 --invalidate <list>   mark only this comma-separated subset of dependent lanes stale (e.g. slices,architecture)
 --json                print machine-readable JSON
@@ -452,8 +469,18 @@ lane                  exploration, prd, findings, architecture, or slices (issue
 Options for `clear-stale`:
 
 ```text
-lane                  exploration, prd, findings, architecture, or slices
+lane                  questions, research, exploration, prd, findings, architecture, or slices
 --reason <reason>     one-sentence verification rationale recorded in stale_history
+--json                print machine-readable JSON
+```
+
+Options for `verdict`:
+
+```text
+lane                  exploration or architecture
+verdict               holds, holds-with-changes, needs-reshaping, or waived
+--reason <reason>     why this verdict was given (required for waived)
+--session <path>      stress test session note that holds the questions and answers
 --json                print machine-readable JSON
 ```
 
@@ -466,6 +493,7 @@ weave change list
 weave change current
 weave change status
 weave change progress prd --source exploration --source sessions --json
+weave change verdict exploration holds-with-changes --reason "Leave handling added" --json
 weave change status 260522-f3q9-review-analytics
 weave change switch f3q9
 ```
@@ -509,7 +537,9 @@ stale:
 
 Weave-managed artifact-writing skills call `progress` after successful live artifact writes. Existing changes without `artifacts` or `stale` continue to work and are treated as having no recorded dependencies or stale lanes.
 
-Default propagation marks every transitive downstream lane stale. Skills following the **Lifecycle Staleness Verification Protocol** (embedded in `weave-prd`, `weave-clarify`, `weave-slices`, and `weave-capture`) first read the dependent artifacts and decide per-lane whether the upstream change actually invalidates them:
+The `questions` and `research` evidence lanes take part in `artifacts` and staleness like any other lane, but progressing them never changes `stage`. Re-running `weave-questions` marks `research` stale, and anything that cites `--source research` goes stale with it.
+
+Default propagation marks every transitive downstream lane stale. Skills following the **Lifecycle Staleness Verification Protocol** (embedded in every progress-calling skill: `weave-questions`, `weave-research`, `weave-explore`, `weave-stress-test`, `weave-prd`, `weave-architect`, `weave-clarify`, `weave-slices`, and `weave-capture`) first read the dependent artifacts and decide per-lane whether the upstream change actually invalidates them:
 
 ```bash
 # default: every downstream lane goes stale
@@ -529,6 +559,20 @@ weave change clear-stale architecture --reason "Wording typo in prd; architectur
 ```
 
 Each clear appends a record to `status.yml.stale_history` with `lane`, `invalidated_by`, `invalidated_at`, `cleared_at`, and `reason`. Never hand-edit `status.yml` to change stale state; use the CLI.
+
+`weave change verdict <lane> <verdict>` records a stress test result under `status.yml.stress_tests`, pinned to the lane's `artifacts.<lane>.updated_at` at the time:
+
+```yaml
+stress_tests:
+  exploration:
+    verdict: holds-with-changes
+    judged_at: "2026-05-31T05:00:00.000Z"
+    artifact_updated_at: "2026-05-31T04:58:00.000Z"
+    session: wiki/changes/<change-id>/sessions/20260531-103000-ab12-exploration-stress-test.md
+    reason: Leave handling added
+```
+
+When the lane is progressed again, `weave change status` reports the verdict as outdated (`Stress test (exploration): holds (outdated: shape changed since)`), and `weave-next`, `weave-prd`, and `weave-slices` ask for a fresh stress test. `waived` requires `--reason`; skills record a waiver only when the user explicitly asks to skip the stress test.
 
 If a target is not a git repo, Weave still writes the change artifacts and reports branch creation as skipped. `switch` blocks when affected git repos have uncommitted changes; `new` does not block so already-started local work can be captured as a new change.
 
@@ -626,15 +670,21 @@ Non-Tier-1 commands (`agent install`, `agent update`, `change list`, `change pro
 
 ## Skill Versioning
 
-Every bundled `SKILL.md` template carries a `last_changed_in` frontmatter field recording the `@weave-tools/weave-it` package version of the last substantive change to that skill:
+Every bundled `SKILL.md` follows the [Agent Skills specification](https://agentskills.io/specification): only `name`, `description`, `license`, `compatibility`, and `metadata` at the top level, with Weave's own fields under `metadata`. `metadata.last_changed_in` records the `@weave-tools/weave-it` package version of the last substantive change to that skill:
 
 ```yaml
 ---
 name: weave-prd
-description: Generate or revise prd.md ...
-last_changed_in: 0.1.0
+description: Write or revise prd.md for the active Weave change ... Use when ... Not for ...
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH ...
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.0"
 ---
 ```
+
+Descriptions say what the skill does, when to use it, and which skill to use instead. A test enforces the spec on every bundled skill, including the 1024-character description limit and the 500-line body guideline. Older installed copies with a top-level `last_changed_in` are still read.
 
 When a skill is installed, the version is stamped into `.weave/agents.yml` as `installed_from`. The `skills_outdated` notice fires when the bundled version is newer than the recorded `installed_from`. Run `weave agent update <agent>` to bring untouched skills up to date, or `weave agent reset <agent> <skill>` to overwrite a locally-modified copy.
 
@@ -644,19 +694,17 @@ Maintainers bump `last_changed_in` for every skill that changed since the previo
 npm run release:bump-skills
 ```
 
-The script reads `package.json`'s `version`, diffs each `templates/skills/<name>/SKILL.md` against the most recent reachable git tag, and only updates skills with real changes. It never commits or tags on its own.
+The script reads `package.json`'s `version`, diffs each `templates/skills/<name>/SKILL.md` against the most recent reachable git tag, and only updates skills with real changes. It writes `metadata.last_changed_in` (moving a legacy top-level field under `metadata`) and never commits or tags on its own.
 
-## Plan Mode Guard (design-discussion skills)
+## Research, Shapes, and Stress Tests
 
-`weave-explore` and `weave-architect` ship with an embedded **Plan Mode Guard** because supported agent harnesses block filesystem writes in plan mode / ask mode:
+Three ideas shape the design skills:
 
-- The skill refuses entry when the harness is not in Plan Mode: `This skill must run in Plan Mode. Switch to Plan Mode, then invoke <skill-name> again.`
-- In Plan Mode the skill resolves the branch-derived active change and treats its lane (`exploration` or `architecture`) as the target without writing repo-tracked artifacts.
-- Durable artifact writes happen later through `weave-capture` (after design discussion) or structural changes through `weave-clarify`.
+- **Research before design, kept objective.** `weave-questions` separates "what are we trying to do" from "how does the system work now": its questions describe only the present. `weave-research` reads only `questions.md`, never the change's intent artifacts, and writes cited facts to `research.md`. Later lanes build on those facts instead of re-reading the code with a particular answer in mind.
+- **Options before interviews.** `weave-explore` (product) and `weave-architect` (engineering) open with two to four genuinely different directions, talk them through, and ask detailed questions only about the one you pick. They write a *shape* — the chosen direction, every option considered and why, decisions, assumptions, and open questions — only after you confirm. `weave-explore` stays in product language and translates research findings; `weave-architect` is technical and cites code.
+- **Independent critique.** `weave-stress-test` attacks only what is written, through a sub-agent that never saw the conversation. Anything agreed only in chat shows up as a gap and gets written into the shape.
 
-`weave-prd` and `weave-clarify` run in Agent Mode and write artifacts directly. They do not carry the guard.
-
-The guard text is enforced byte-identically across the two skills by a test against the canonical constant in `src/lib/skill-template-checks.ts`.
+No Weave skill requires Plan Mode. Design skills write only their own lane's artifact, and only after you confirm; use `weave-capture session <lane>` to checkpoint a discussion without deciding.
 
 ## `weave agent`
 
@@ -676,6 +724,8 @@ opencode   install Agent Skills to .agents/skills and slash commands to .opencod
 all        install every supported integration
 ```
 
+For Claude Code, `install` also adds Weave's read-only sub-agents to `.claude/agents/`: `weave-locator`, `weave-analyzer`, `weave-pattern-finder`, and `weave-web-researcher` (used by `weave-questions` and `weave-research`), and `weave-challenger` (used by `weave-stress-test`). They are limited to read-only tools. Other agents run the same roles inside the main skill. Sub-agents are tracked in `.weave/agents.yml` with the same update, diff, and reset protection as skills.
+
 Examples:
 
 ```bash
@@ -694,21 +744,24 @@ Weave ships Agent Skills for the full change lifecycle. Each skill starts by run
 ### Skill reference
 
 ```text
-weave-new        start a new change from a title or topic
-weave-capture    capture discussion into session notes and/or live artifacts
-weave-explore    stress-test product requirements (Plan Mode; read-only)
-weave-prd        generate or revise prd.md
-weave-architect  engineering thinking partner (Plan Mode; read-only)
-weave-clarify    amend one existing artifact when scope or decisions change
-weave-fix        chat-driven fix entry; writes findings.md + initial slice
-weave-slices     scaffold task-slices/ from upstream artifacts
-weave-execute    implement and verify selected tasks locally
-weave-next       read-only: recommend the next skill for the active change
-weave-knowledge  update current-state knowledge specs for an active change
+weave-new          start a new change from a title or topic
+weave-questions    write current-state research questions (questions.md)
+weave-research     answer them objectively with read-only sub-agents (research.md)
+weave-explore      brainstorm product directions, then write the product shape
+weave-stress-test  challenge a written shape and record a verdict
+weave-prd          write prd.md from the stress-tested product shape
+weave-architect    compare technical approaches, then write the technical shape
+weave-capture      capture discussion into session notes and/or live artifacts
+weave-clarify      amend one existing artifact when scope or decisions change
+weave-fix          chat-driven fix entry; writes findings.md + initial slice
+weave-slices       scaffold task-slices/ from upstream artifacts
+weave-execute      implement and verify selected tasks locally
+weave-next         read-only: recommend the next skill for the active change
+weave-knowledge    update current-state knowledge specs for an active change
 
 Legacy / deprecated:
-weave-issues     superseded by weave-slices (flat tasks.md only)
-weave-prepare    deprecated; branch prep is built into weave-execute
+weave-issues       superseded by weave-slices (flat tasks.md only)
+weave-prepare      deprecated; branch prep is built into weave-execute
 ```
 
 ### `weave-capture`
@@ -732,18 +785,21 @@ Before any write, **Defensive Lane Verification** compares the resolved lane aga
 - In workspace mode, may inspect registered sub-repos only when the selected clarification depends on repo-local truth.
 - Applies the Lifecycle Staleness Verification Protocol before calling `weave change progress <target>`.
 
-Use `weave-explore` / `weave-architect` for initial design thinking, `weave-capture` to persist architecture discussions, and `weave-clarify` for focused amendments.
+Use `weave-explore` / `weave-architect` for design thinking (they write their own shapes once you decide), `weave-capture` for checkpoints, and `weave-clarify` for focused amendments. When `weave-clarify` changes the chosen direction or approach, it moves the old one under Options Considered instead of deleting it.
 
 ### Other skills (concise)
 
-- **`weave-new`**: creates a change via `weave change new` and recommends the first lane skill (`weave-explore` for features; `weave-fix` / `weave-architect` / `weave-slices` / `weave-prd` for non-feature types).
-- **`weave-explore`**: Plan Mode product discovery; interviews and stress-tests requirements without writing artifacts.
-- **`weave-prd`**: writes or revises `prd.md` from exploration and session context.
-- **`weave-architect`**: Plan Mode read-only engineering partner; gathers context and returns architecture dissection in chat. Durable architecture writes happen through `weave-capture` or `weave-clarify`.
+- **`weave-new`**: creates a change via `weave change new` and recommends the first lane skill (`weave-questions` for features that touch existing behaviour, `weave-explore` for greenfield work; `weave-fix` / `weave-architect` / `weave-slices` / `weave-prd` for non-feature types).
+- **`weave-questions`**: writes two to eight descriptive questions about today's system to `questions.md`, plus verbatim context pointers from the request; never describes the planned change.
+- **`weave-research`**: answers `questions.md` using `weave-locator`, `weave-analyzer`, `weave-pattern-finder`, and `weave-web-researcher`; writes a cited `research.md` with flows, contracts, tests, and code references; makes one follow-up pass on open questions.
+- **`weave-explore`**: product brainstorm — options, back-and-forth, then targeted questions for the chosen direction; writes the product shape to `exploration.md` after confirmation; never uses technical jargon.
+- **`weave-stress-test`**: runs `weave-challenger` against a shape, interviews you on the weak points (blocking first, about ten questions at most), updates the shape, writes a `sessions/*-<lane>-stress-test.md` note, and records the verdict.
+- **`weave-prd`**: maps the product shape onto the PRD template, asks only blocking questions, and sends you back to `weave-clarify exploration` if a decision needs to change.
+- **`weave-architect`**: technical options, discussion, then decisions for the chosen approach; writes `architecture/index.md` and facets from the templates after confirmation.
 - **`weave-fix`**: chat-driven `--type fix` entry; writes `findings.md`, scaffolds `task-slices/01-<slug>/`, progresses the `findings` lane.
 - **`weave-slices`**: scaffolds `task-slices/<NN>-<slug>/` from upstream artifacts; owns the `slices` lane; requires explicit verification tasks per slice.
 - **`weave-execute`**: agent-first local task execution in slice mode (`/weave-execute 01 T1`) or flat legacy mode (`/weave-execute T3`); includes branch prep, dependency expansion, verification, and narrow `tasks.md` evidence updates. Does not commit, push, or open PRs.
-- **`weave-next`**: read-only advisory summary of artifact state and recommended next skill.
+- **`weave-next`**: read-only advisory summary of artifact state, stale lanes, stress test verdicts, and the recommended next skill.
 - **`weave-knowledge`**: updates `wiki/knowledge/**` and writes `knowledge-delta.md` for the active change.
 
 Every bundled skill follows the shared `# Silent Weave Command Output` contract: discovery command output is internal by default; only blockers, failures, relevant notices, or user-required actions are summarized.
@@ -758,12 +814,13 @@ weave agent install opencode
 weave agent install all
 ```
 
-New skills such as `weave-slices`, `weave-fix`, and `weave-execute` require `weave agent install`; `weave agent update` refreshes existing manifest entries only.
+New skills such as `weave-questions`, `weave-research`, and `weave-stress-test`, and new sub-agents, require `weave agent install`; `weave agent update` refreshes existing manifest entries only.
 
 Install targets:
 
 ```text
 claude     .claude/skills/<skill>/SKILL.md
+claude     .claude/agents/<subagent>.md
 cursor     .agents/skills/<skill>/SKILL.md
 codex      .agents/skills/<skill>/SKILL.md
 opencode   .agents/skills/<skill>/SKILL.md
@@ -887,6 +944,7 @@ src/
     workspace-mode.ts
     workspace-repos.ts
 templates/
+  agents/
   opencode/
     commands/
   skills/

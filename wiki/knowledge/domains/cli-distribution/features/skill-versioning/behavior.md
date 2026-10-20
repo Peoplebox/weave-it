@@ -6,7 +6,7 @@ Give every bundled `SKILL.md` a version identity that travels with the package, 
 
 ## Current Behavior
 
-Each `templates/skills/<name>/SKILL.md` carries a required `last_changed_in: <package-version>` field in its YAML frontmatter. The field is the `weave-it` package version that last meaningfully changed that skill.
+Each `templates/skills/<name>/SKILL.md` carries a required `metadata.last_changed_in: "<package-version>"` field in its YAML frontmatter, following the Agent Skills specification, which keeps client-specific fields under `metadata`. A legacy top-level `last_changed_in` is still accepted when reading. The field is the `weave-it` package version that last meaningfully changed that skill.
 
 When the user runs `weave agent install <agent>` or `weave agent update <agent>`, the CLI stamps the bundled `last_changed_in` value into `.weave/agents.yml` as the skill's `installed_from` field. Later, drift detection compares the manifest `installed_from` against the currently bundled `last_changed_in` to decide whether the installed copy is `outdated`.
 
@@ -19,8 +19,12 @@ Hash-based modification detection (existing behavior) and version-based outdated
 ```yaml
 ---
 name: <skill-name>
-description: <short description>
-last_changed_in: <package-version>   # e.g. "0.1.0"
+description: <what it does, when to use it, which skill to use instead>
+license: MIT
+compatibility: Requires the weave CLI ...
+metadata:
+  author: weave-tools
+  last_changed_in: "<package-version>"   # e.g. "0.1.0"
 ---
 ```
 
@@ -49,7 +53,8 @@ Skill drift state derived for the per-skill view:
 
 ## Behavioral Rules
 
-- The parser refuses to load a bundled `SKILL.md` whose frontmatter omits `last_changed_in`. Error: `Skill frontmatter in <path> must include last_changed_in (the weave-it package version of the last skill change)`.
+- The parser refuses to load a bundled `SKILL.md` whose frontmatter has neither `metadata.last_changed_in` nor a legacy top-level `last_changed_in`. Error: `Skill frontmatter in <path> must include metadata.last_changed_in (the weave-it package version of the last skill change)`.
+- A test enforces the Agent Skills spec on every bundled skill: only spec fields at the top level, name rules and directory match, descriptions of at most 1024 characters that say when to use the skill, string-only metadata, and bodies under 500 lines.
 - The parser is lenient on legacy `.weave/agents.yml` entries: a manifest entry without `installed_from` is loaded with `installed_from: null`. Such entries always report as `outdated` until reinstalled or updated.
 - `installed_from` is rewritten on every `install`, `update`, and `reset` operation that touches the skill, using the bundled `last_changed_in` at that moment.
 - When multiple agents share the same installed skill path, such as `.agents/skills/<skill>/SKILL.md`, `weave agent update all` refreshes each agent's manifest entry when the disk file already matches the current bundled template. This prevents one agent's update from making another agent's shared-path entry appear user-modified.
@@ -64,6 +69,7 @@ Skill drift state derived for the per-skill view:
 - Reads the most recent reachable git tag via `git describe --tags --abbrev=0`.
 - For every `templates/skills/<name>/SKILL.md`, runs `git diff <tag>..HEAD -- <path>` and bumps `last_changed_in` to the upcoming version only when the diff is non-empty.
 - Defaults missing `last_changed_in` fields to the upcoming version with a warning.
+- Writes the version under `metadata` as a quoted string, moving a legacy top-level field there and keeping other `metadata` keys.
 - Never commits, tags, pushes, or runs npm.
 - When no prior tag is reachable, treats every skill as new and stamps every one.
 
@@ -87,6 +93,7 @@ The script is invoked by the maintainer as part of cutting a release, before `np
 
 - 2026-06-03 (change `260603-piln-npm-and-skill-versioning-and-updates`): `last_changed_in` frontmatter field added to all 10 bundled skills; `installed_from` manifest field introduced; legacy-tolerant manifest loader added; release script and npm script introduced; the existing hash-based modification detection is retained and complementary.
 - 2026-06-07 (change `260607-vuwa-architecture-skill-update`): shared installed skill paths no longer produce false `modified` states during `weave agent update all` when the disk file already matches the current bundled template; each agent's manifest entry is refreshed instead.
+- 2026-10-20 (branch `change/questions-research-skills`): moved `last_changed_in` under `metadata` with `license`, `compatibility`, and `metadata.author`; descriptions rewritten; spec-compliance test added; release script writes and migrates the nested field.
 
 ## Open Questions
 

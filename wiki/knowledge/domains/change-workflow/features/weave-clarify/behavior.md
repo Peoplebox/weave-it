@@ -62,6 +62,7 @@ When only legacy `architecture.md` exists, `weave-clarify architecture` migrates
 
 - 2026-06-06 (change `260606-k0l6-architecture-folder`): `weave-clarify architecture` learned folder-mode architecture shape detection, legacy migration by explicit request, and lane-local structural operations for architecture facets.
 - 2026-06-06 (change `260606-k0l6-architecture-folder`): `weave-clarify` gained targeted sub-repo awareness for repo-local verification when a clarification depends on implementation or documentation truth, while still avoiding broad workspace discovery by default.
+- 2026-10-20 (branch `change/questions-research-skills`): per-target rules moved to the `target-rules.md` resource; changing the chosen direction or approach moves the old one under Options Considered.
 
 ## Open Questions
 

@@ -411,6 +411,7 @@ weave change status [change] [--json]
 weave change switch <change> [--json]
 weave change progress <lane> [--source <source>...] [--no-invalidate|--invalidate <lanes>] [--json]
 weave change clear-stale <lane> [--reason <reason>] [--json]
+weave change verdict <exploration|architecture> <holds|holds-with-changes|needs-reshaping|waived> [--reason <reason>] [--session <path>] [--json]
 weave change knowledge <status> [--domain <domain>...] [--shared <shared>...] [--file <file>...] [--delta <path>] [--reason <reason>] [--invalidated-by <source>] [--json]
 ```
 

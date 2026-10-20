@@ -66,7 +66,7 @@ Bare `weave-capture` asks for an explicit target when none is provided. Session-
 - Architecture template resources: `templates/skills/weave-architect/*-template.md`
 - Installed copies: `.agents/skills/weave-capture/SKILL.md`, `.claude/skills/weave-capture/SKILL.md`
 - Opencode wrapper: `templates/opencode/commands/weave-capture.md`
-- Plan Mode Protocol companion: `templates/skills/weave-prd/SKILL.md`, `templates/skills/weave-architect/SKILL.md`, `templates/skills/weave-clarify/SKILL.md`, `templates/skills/weave-explore/SKILL.md`
+- Design skills that write their own shapes (capture is used for checkpoints and promoting pending session notes): `templates/skills/weave-explore/SKILL.md`, `templates/skills/weave-architect/SKILL.md`; product shape structure: `templates/skills/weave-explore/shape-template.md`
 - Lifecycle CLI: `src/commands/change.ts` (`weave change progress`, `weave change clear-stale`)
 - Tests: `tests/agent-skills.test.ts` (defensive verification anchors, byte-identity of embedded protocol blocks)
 
@@ -75,6 +75,7 @@ Bare `weave-capture` asks for an explicit target when none is provided. Session-
 - 2026-06-03 (change `260603-piln-npm-and-skill-versioning-and-updates`): added the `# Defensive Lane Verification` step (lane vs conversation-substance comparison with explicit user ask on mismatch); embedded the byte-identical `# Lifecycle Staleness Verification` and original notice-surfacing blocks.
 - 2026-06-06 (change `260606-k0l6-architecture-folder`): architecture capture learned folder-mode architecture, `facets` session frontmatter, direct child architecture template resources, and no-template facet creation only on explicit user request.
 - 2026-06-07 (change `260607-1mo4-fixes-around-existing-commands`): replaced verbatim notice surfacing with the shared `# Silent Weave Command Output` contract.
+- 2026-10-20 (branch `change/questions-research-skills`): `weave-explore` and `weave-architect` now write their own shapes, so capture is mainly for checkpoints and promoting pending session notes; exploration captures use the product shape template.
 
 ## Open Questions
 

@@ -84,7 +84,10 @@ Then read relevant recent session notes newest-first:
 wiki/changes/<change-id>/sessions/*-exploration.md
 wiki/changes/<change-id>/sessions/*-prd.md
 wiki/changes/<change-id>/sessions/*-architecture.md
+wiki/changes/<change-id>/sessions/*-stress-test.md
 ```
+
+Stress test notes (`*-<lane>-stress-test.md`) are not brainstorm notes. Use them for deferred challenges and the verdict reasoning, and find the latest one through `stress_tests.<lane>.session`.
 
 Prefer the latest relevant `## Next Resume Point` for resume guidance. Avoid a full history audit unless the latest notes are ambiguous or conflict with live artifacts.
 
@@ -105,7 +108,12 @@ For `exploration.md`, use `PRD Readiness` when present:
 
 For `prd.md`, open product questions or unresolved PRD session context can make PRD resume work primary even when architecture exists.
 
-For the architecture artifact, open technical questions, unresolved architecture session context, missing folder index, or substantive facet-only context can make architecture resume work primary before issues.
+For the architecture artifact, use `Slices Readiness` in `architecture/index.md` (or `architecture.md`) when present:
+
+- `Ready` means the technical shape can support slicing.
+- `Not ready` means recommend architecture work before slices.
+
+Open technical questions, unresolved architecture session context, a missing folder index, or substantive facet-only context can also make architecture resume work primary before slices.
 
 For issue evidence, use conservative v1 heuristics only:
 
@@ -123,9 +131,9 @@ Source-aware stale-first recommendation:
 - stale `questions` -> run `weave-questions`
 - stale `research` -> run `weave-research`
 - stale `prd` -> run `weave-prd`
-- outdated stress test (`stress_tests.<lane>.outdated` in `weave change status --json`) -> run `weave-stress-test <lane>` again before the next lane relies on it
 - stale `architecture` -> run `weave-architect`
 - stale `slices` -> run `weave-slices`
+- outdated stress test (`stress_tests.<lane>.outdated` in `weave change status --json`) -> run `weave-stress-test <lane>` again before the next lane relies on it
 - Explain which upstream lane invalidated the recommendation when `invalidated_by` is present.
 - Treat stale entries as source-aware dependency invalidation from `status.yml.artifacts`, not proof that every earlier pipeline lane was completed.
 
@@ -154,10 +162,10 @@ Type-aware forward recommendation:
 
 - missing, scaffold-only, or not-ready `exploration.md` -> run `weave-explore`
 - ready `exploration.md` with a passing or waived stress test (or a non-`feat` change) plus missing `prd.md` -> run `weave-prd`
-- usable `prd.md` plus missing `architecture.md` -> run `weave-architect`
-- usable `architecture.md` with a passing or waived stress test (or a non-`feat` change) plus no slice evidence -> run `weave-slices`
+- usable `prd.md` plus missing architecture artifact (`architecture/index.md` or `architecture.md`) -> run `weave-architect`
+- ready architecture artifact with a passing or waived stress test (or a non-`feat` change) plus no slice evidence -> run `weave-slices`
 - populated `tasks.md` or obvious issue references -> implementation handoff ready
-- For `fix`, `refactor`, `docs`, `test`, `ci`, and `chore`, prefer architecture or issues when product behavior is already clear; do not require PRD just to advance.
+- For `fix`, `refactor`, `docs`, `test`, `ci`, and `chore`, prefer architecture or slices when product behavior is already clear; do not require PRD just to advance.
 - For `feat`, prefer exploration or PRD when product behavior, scope, requirements, or acceptance remain unclear.
 
 Resume recommendation:
@@ -188,7 +196,7 @@ Omit empty sections when they would add noise.
 
 In `Current Change`, include change id, title when available, target repo or repos, and branch health.
 
-In `Artifact State`, summarize `questions.md` and `research.md` when present, then `exploration.md`, `prd.md`, `architecture.md`, and issue/task evidence.
+In `Artifact State`, summarize `questions.md` and `research.md` when present, then `exploration.md` (with PRD Readiness), `prd.md`, the architecture artifact (with Slices Readiness), and slice or task evidence.
 
 In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present, and each stress test verdict when `status.yml.stress_tests` is present (say when one is outdated).
 

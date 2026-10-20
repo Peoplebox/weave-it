@@ -5,7 +5,7 @@ This domain captures how `weave-it` (the npm package) and its bundled agent skil
 - Human developers running `weave` in a terminal.
 - AI agents (Claude, Cursor, Codex, opencode) invoking `weave` programmatically through installed Weave skills.
 
-The package version (`package.json.version`) and per-skill version (`SKILL.md` frontmatter field `last_changed_in`) evolve together but are reported independently. Staleness is detected for two cases without performing automatic upgrades: a newer `weave-it` on the npm registry, and per-repo skill drift (`outdated`, `modified`, `modified+outdated`, `missing`).
+The package version (`package.json.version`) and per-skill version (`SKILL.md` frontmatter field `metadata.last_changed_in`) evolve together but are reported independently. Staleness is detected for two cases without performing automatic upgrades: a newer `weave-it` on the npm registry, and per-repo skill drift (`outdated`, `modified`, `modified+outdated`, `missing`).
 
 ## Features
 
@@ -23,7 +23,7 @@ The package version (`package.json.version`) and per-skill version (`SKILL.md` f
 - **Skill resource**: a managed direct child file beside `SKILL.md`, such as `prd-template.md`, `knowledge-templates.md`, or an architecture `*-template.md`.
 - **Notice**: a single staleness message with `kind` and `message` (and an optional `details` payload). v1 kinds: `package_outdated`, `skills_modified`, `skills_outdated`.
 - **Tier 1 commands**: the five commands that emit notices: `weave workspace`, `weave change current`, `weave change status`, `weave change new`, `weave status`. Non-Tier-1 commands never include `notices` in their `--json` output.
-- **Skill contract block**: a byte-identical prose section embedded in shipped `SKILL.md` files. Current examples include `# Silent Weave Command Output` (all skills), `# Plan Mode Guard` (`weave-explore` and `weave-architect`), and `# Lifecycle Staleness Verification` (progress-calling skills).
+- **Skill contract block**: a byte-identical prose section embedded in shipped `SKILL.md` files. Current examples include `# Silent Weave Command Output` (all skills) and `# Lifecycle Staleness Verification` (progress-calling skills).
 
 ## Source Map
 

@@ -22,6 +22,8 @@ Per-slice `tasks.md` uses `Execution: afk | hitl` (not legacy `Type: HITL | AFK`
 
 ## Behavioral Rules
 
+- **Stress test gate (`feat`)**: before scaffolding, requires a current `stress_tests.architecture` verdict of `holds`, `holds-with-changes`, or `waived`; a missing, outdated, or `needs-reshaping` verdict stops with the skill to run next. Waivers are recorded only when the user asks and gives a reason. Other change types are not gated.
+
 - feat requires `prd.md` + `architecture/`; fix requires `findings.md`; chore/refactor requires `exploration.md`.
 - `contracts.md` uses slice-level technical contracts (Interfaces, Data, State, Validation; adaptive optional sections).
 - fix-type single-slice changes may skip `slice.md` / `contracts.md` when nothing meaningful to write.
@@ -44,6 +46,7 @@ Per-slice `tasks.md` uses `Execution: afk | hitl` (not legacy `Type: HITL | AFK`
 
 - 2026-06-09 (change `260609-rrsq-weave-slice`): introduced as replacement for `weave-issues`; `last_changed_in: 0.1.6`.
 - 2026-06-11 (change `260611-cuvh-slices-execution-default-afk`): `Execution:` default flipped from `hitl` to `afk` for all generated tasks; `hitl` now reserved for explicit user request. Manual-verification guidance changed to an explicit `afk`-when-mechanical vs `hitl`-when-human-judgment-needed policy.
+- 2026-10-20 (branch `change/questions-research-skills`): for `feat` changes, scaffolding now requires a current architecture stress test verdict (`holds`, `holds-with-changes`, or `waived`), and a `Not ready` Slices Readiness is reported before continuing.
 
 ## Open Questions
 
