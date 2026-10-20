@@ -1,7 +1,11 @@
 ---
 name: weave-clarify
-description: Clarify and revise one existing Weave change artifact without advancing the workflow. Use when scope, requirements, assumptions, or decisions change midstream and an existing exploration.md, prd.md, findings.md, or architecture.md needs amendment.
-last_changed_in: 0.1.7
+description: Revise one existing Weave change artifact (exploration.md, prd.md, findings.md, or architecture) when scope, requirements, assumptions, or decisions change midstream, without advancing the workflow, and flag downstream artifacts that become stale. Use when the user says something changed, wants to amend or correct an artifact, or wants to resolve an open question recorded in it. Not for creating an artifact for the first time.
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.7"
 ---
 
 # Weave Clarify
@@ -336,38 +340,7 @@ Do not edit those artifacts. Ask the user to run `weave-clarify <target>` separa
 
 # Target-Specific Rules
 
-## exploration
-
-Use `exploration.md` as the target when discovery, scope, scenarios, decisions, or PRD readiness changed.
-
-Keep these sections current when present:
-
-```text
-Current Understanding
-Open Questions
-Decisions
-Scenarios
-Existing Behavior
-PRD Readiness
-```
-
-If the clarification makes the exploration ready or not ready for PRD generation, update `PRD Readiness`.
-
-## prd
-
-Use `prd.md` as the target when product behavior, user workflows, user stories, requirements, edge cases, acceptance criteria, rollout, assumptions, or open questions changed.
-
-Preserve still-valid PRD content. If scope narrowed, move removed behavior to `Non-Goals` or `Out of Scope` instead of silently deleting it.
-
-Add a concise dated `Revision History` entry for meaningful changes.
-
-## architecture
-
-Use the architecture artifact as the target when technical approach, affected systems, data flow, architecture decisions, rejected alternatives, rollout, operations, testing, security, risks, assumptions, open technical questions, or architecture facet structure changed.
-
-Prefer `prd.md` as the product contract. If the technical clarification exposes a product ambiguity not settled by the PRD, record it under `Product Questions Raised by Technical Design` and report `prd.md` as a follow-up artifact.
-
-Add a concise dated `Revision History` entry for meaningful changes.
+Each target (`exploration`, `prd`, `architecture`) has its own rules for which sections to keep current and how to handle scope changes. Before editing, read the matching section of `target-rules.md` (sibling to this `SKILL.md`, at `<agent-skills-dir>/weave-clarify/target-rules.md` after install).
 
 ---
 

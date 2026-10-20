@@ -51,6 +51,23 @@ export const artifactSourceIds = [
   "codebase",
 ] as const;
 export const knowledgeStatuses = ["pending", "stale", "updated", "none"] as const;
+// Shapes that `weave-stress-test` can judge, and the verdicts it can record.
+export const stressTestLanes = ["exploration", "architecture"] as const satisfies readonly ChangeStage[];
+export const stressTestVerdicts = ["holds", "holds-with-changes", "needs-reshaping", "waived"] as const;
+export type StressTestLane = (typeof stressTestLanes)[number];
+export type StressTestVerdict = (typeof stressTestVerdicts)[number];
+
+export interface StressTestRecord {
+  verdict: StressTestVerdict;
+  judged_at: string;
+  // `artifacts.<lane>.updated_at` when the verdict was recorded; a later lane update makes it outdated.
+  artifact_updated_at: string | null;
+  session?: string;
+  reason?: string;
+  outdated: boolean;
+}
+
+export type StressTestRecords = Partial<Record<StressTestLane, StressTestRecord>>;
 
 export interface StaleChangeLaneMetadata {
   invalidated_by: ChangeStage;
@@ -120,6 +137,7 @@ export interface ChangeSummary {
   stale: StaleChangeLanes;
   stale_history: StaleHistoryEntry[];
   artifacts: ChangeArtifactsMetadata;
+  stress_tests: StressTestRecords;
   knowledge?: KnowledgeMetadata;
   branch: string;
   path: string;
@@ -313,6 +331,7 @@ interface ChangeStatusMetadata extends ExistingChangeMetadata {
   stale: StaleChangeLanes;
   stale_history: StaleHistoryEntry[];
   artifacts: ChangeArtifactsMetadata;
+  stress_tests: StressTestRecords;
   knowledge?: KnowledgeMetadata;
   created_at?: string;
   updated_at?: string;
@@ -642,6 +661,75 @@ export async function clearChangeStaleness(
   };
 }
 
+export interface VerdictChangeOptions {
+  cwd: string;
+  lane: StressTestLane;
+  verdict: StressTestVerdict;
+  reason?: string;
+  session?: string;
+  now?: Date;
+  sessionPath?: string;
+}
+
+export interface VerdictChangeResult {
+  status: "ok";
+  target: ChangeTarget;
+  change: ChangeSummary;
+  lane: StressTestLane;
+  stress_test: StressTestRecord;
+  message: string;
+}
+
+export async function verdictChange(options: VerdictChangeOptions): Promise<VerdictChangeResult> {
+  const now = options.now ?? new Date();
+  const reason = options.reason?.trim() || undefined;
+  if (options.verdict === "waived" && !reason) {
+    throw new ChangeCommandError("missing_reason", "A waived stress test needs --reason explaining why it was skipped.");
+  }
+
+  const context = await activeChangeContext(options);
+  const target = context.target;
+  const statusPath = path.join(context.change.changePath, "status.yml");
+  const raw = await readStatusFile(statusPath);
+  const existing = await readChangeMetadata(context.change.changePath, context.change.id);
+
+  const record: Omit<StressTestRecord, "outdated"> = {
+    verdict: options.verdict,
+    judged_at: now.toISOString(),
+    artifact_updated_at: existing.artifacts[options.lane]?.updated_at ?? null,
+    ...(options.session ? { session: options.session } : {}),
+    ...(reason ? { reason } : {}),
+  };
+  const stressTests = isRecord(raw.stress_tests) ? raw.stress_tests : {};
+  const nextStatus = {
+    ...raw,
+    stress_tests: { ...stressTests, [options.lane]: record },
+    updated_at: now.toISOString(),
+  };
+  await writeFile(statusPath, YAML.stringify(nextStatus));
+
+  const updated = await readChangeMetadata(context.change.changePath, context.change.id);
+  const change: ChangeSummary = {
+    ...updated,
+    path: context.change.path,
+    changePath: context.change.changePath,
+    active: true,
+  };
+  const stressTest = change.stress_tests[options.lane];
+  if (!stressTest) {
+    throw new ChangeCommandError("invalid_stress_test", "Stress test verdict could not be recorded");
+  }
+
+  return {
+    status: "ok",
+    target,
+    change,
+    lane: options.lane,
+    stress_test: stressTest,
+    message: `Recorded ${options.lane} stress test verdict: ${options.verdict}${reason ? ` (${reason})` : ""}.`,
+  };
+}
+
 export async function knowledgeChange(options: KnowledgeChangeOptions): Promise<KnowledgeChangeResult> {
   const now = options.now ?? new Date();
   const context = await activeChangeContext(options);
@@ -830,6 +918,7 @@ async function readChangeMetadata(changePath: string, fallbackId: string): Promi
     stale: parseStaleLanes(parsed?.stale),
     stale_history: parseStaleHistory(parsed?.stale_history),
     artifacts: parseArtifactsMetadata(parsed?.artifacts),
+    stress_tests: parseStressTests(parsed?.stress_tests, parseArtifactsMetadata(parsed?.artifacts)),
     knowledge: parseKnowledgeMetadata(parsed?.knowledge),
     branch,
     created_at: typeof parsed?.created_at === "string" ? parsed.created_at : undefined,
@@ -919,6 +1008,32 @@ function parseArtifactSources(value: unknown): ArtifactSourceId[] {
   }
 
   return dedupeSources(value.filter(isArtifactSourceId));
+}
+
+function parseStressTests(value: unknown, artifacts: ChangeArtifactsMetadata): StressTestRecords {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const records: StressTestRecords = {};
+  for (const lane of stressTestLanes) {
+    const entry = value[lane];
+    if (!isRecord(entry) || !isStressTestVerdict(entry.verdict) || typeof entry.judged_at !== "string") {
+      continue;
+    }
+    const artifactUpdatedAt = typeof entry.artifact_updated_at === "string" ? entry.artifact_updated_at : null;
+    const laneUpdatedAt = artifacts[lane]?.updated_at;
+    records[lane] = {
+      verdict: entry.verdict,
+      judged_at: entry.judged_at,
+      artifact_updated_at: artifactUpdatedAt,
+      ...(typeof entry.session === "string" ? { session: entry.session } : {}),
+      ...(typeof entry.reason === "string" ? { reason: entry.reason } : {}),
+      outdated: Boolean(laneUpdatedAt && (!artifactUpdatedAt || laneUpdatedAt > artifactUpdatedAt)),
+    };
+  }
+
+  return records;
 }
 
 function parseKnowledgeMetadata(value: unknown): KnowledgeMetadata | undefined {
@@ -1277,15 +1392,21 @@ function explorationTemplate(title: string, topic: string, now: Date): string {
 
 ${topic}
 
-## Current Understanding
+## Problem
 
-## Open Questions
+## Existing Behavior
 
-## Decisions
+## Options Considered
+
+## Chosen Direction
 
 ## Scenarios
 
-## Existing Behavior
+## Decisions
+
+## Assumptions
+
+## Open Questions
 
 ## PRD Readiness
 
@@ -1479,6 +1600,7 @@ function formatStatusTarget(target: StatusChangeTargetResult): string {
     `Type: ${target.change.type}`,
     `Stage: ${target.change.stage}`,
     ...formatStaleLines(target.change.stale),
+    ...formatStressTestLines(target.change.stress_tests),
     ...formatKnowledgeLines(target.change.knowledge),
     `Branch: ${target.change.branch}`,
     `Path: ${target.change.path}`,
@@ -1519,6 +1641,13 @@ function formatStaleLines(stale: StaleChangeLanes): string[] {
       return `${stage} (invalidated by ${metadata.invalidated_by})`;
     });
   return entries.length > 0 ? [`Stale: ${entries.join(", ")}`] : [];
+}
+
+function formatStressTestLines(stressTests: StressTestRecords): string[] {
+  return stressTestLanes.flatMap((lane) => {
+    const record = stressTests[lane];
+    return record ? [`Stress test (${lane}): ${record.verdict}${record.outdated ? " (outdated: shape changed since)" : ""}`] : [];
+  });
 }
 
 function formatKnowledgeLines(knowledge: KnowledgeMetadata | undefined): string[] {
@@ -1597,6 +1726,14 @@ export function isStoredChangeStage(value: unknown): value is StoredChangeStage 
 
 export function isArtifactSourceId(value: unknown): value is ArtifactSourceId {
   return typeof value === "string" && (artifactSourceIds as readonly string[]).includes(value);
+}
+
+export function isStressTestLane(value: unknown): value is StressTestLane {
+  return typeof value === "string" && (stressTestLanes as readonly string[]).includes(value);
+}
+
+export function isStressTestVerdict(value: unknown): value is StressTestVerdict {
+  return typeof value === "string" && (stressTestVerdicts as readonly string[]).includes(value);
 }
 
 export function isKnowledgeStatus(value: unknown): value is KnowledgeStatus {

@@ -1,7 +1,11 @@
 ---
 name: weave-execute
-description: Execute selected local Weave tasks for an active change by preparing branches, implementing tasks, running verification, and updating tasks.md evidence without committing, pushing, or opening PRs.
-last_changed_in: 0.1.11
+description: Implement selected tasks of the active Weave change locally. Resolves task dependencies, prepares branches, writes the code, runs verification, and records evidence in tasks.md, without committing, pushing, or opening PRs. Use when the user says implement, execute, build, or work on specific tasks (for example T1 to T3) or the next ready slice. Not for planning the work (use weave-slices).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.11"
 ---
 
 # Weave Execute

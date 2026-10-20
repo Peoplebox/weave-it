@@ -1,7 +1,11 @@
 ---
 name: weave-prd
-description: Generate or revise prd.md for an active Weave change. Use when the user wants to convert exploration, discussion, sessions, or product interview context into a product requirements document.
-last_changed_in: 0.1.9
+description: Write or revise prd.md for the active Weave change from the agreed product shape in exploration.md, research.md, session notes, and the discussion. Use when the product direction is decided and the user wants a PRD, product requirements, acceptance criteria, or to update requirements after feedback. Asks only the questions that block the PRD. Not for comparing product options (use weave-explore) or technical design (use weave-architect).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.9"
 ---
 
 # Weave PRD
@@ -85,6 +89,8 @@ Read when present:
 ```text
 wiki/changes/<change-id>/exploration.md
 ```
+
+When `exploration.md` follows the product shape, build the PRD from its `Chosen Direction`, `Scenarios`, `Decisions`, and `Assumptions`, and keep `Options Considered` as background rather than requirements.
 
 Treat `exploration.md` as thin context when it is:
 

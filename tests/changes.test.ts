@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
-import { createChange, currentChange, knowledgeChange, listChanges, progressChange, statusChange, switchChange } from "../src/lib/changes.js";
+import { createChange, currentChange, knowledgeChange, listChanges, progressChange, statusChange, switchChange, verdictChange } from "../src/lib/changes.js";
 
 const execFileAsync = promisify(execFile);
 const testNow = new Date(2026, 4, 22, 10, 0, 0);
@@ -543,6 +543,44 @@ describe("changes", () => {
     expect(Object.keys(result.change.stale).sort()).toEqual(["architecture", "prd", "research"]);
     expect(result.change.stale.research).toMatchObject({ invalidated_by: "questions" });
     expect(result.change.stage).toBe("architecture");
+  });
+
+  it("marks a stress test verdict outdated once its shape changes", async () => {
+    const cwd = await tempDir();
+    const session = sessionPath(cwd);
+    await createChange({ cwd, title: "Verdict freshness", now: testNow, randomId: () => "v111", sessionPath: session });
+    await progressChange({ cwd, stage: "exploration", sources: ["discussion"], sessionPath: session, now: testNow });
+
+    const judged = await verdictChange({ cwd, lane: "exploration", verdict: "holds", sessionPath: session, now: testNow });
+    expect(judged.stress_test).toMatchObject({ verdict: "holds", outdated: false, artifact_updated_at: testNowIso });
+
+    const later = new Date(2026, 4, 22, 11, 0, 0);
+    await progressChange({ cwd, stage: "exploration", sources: ["discussion"], sessionPath: session, now: later });
+    const status = await statusChange({ cwd, sessionPath: session });
+    const change = status.targets[0]?.change;
+
+    expect(change?.stress_tests.exploration).toMatchObject({ verdict: "holds", outdated: true });
+    expect(status.message).toContain("Stress test (exploration): holds (outdated: shape changed since)");
+  });
+
+  it("records a waived stress test only with a reason", async () => {
+    const cwd = await tempDir();
+    const session = sessionPath(cwd);
+    await createChange({ cwd, title: "Verdict waiver", now: testNow, randomId: () => "v222", sessionPath: session });
+
+    await expect(
+      verdictChange({ cwd, lane: "architecture", verdict: "waived", sessionPath: session, now: testNow }),
+    ).rejects.toMatchObject({ code: "missing_reason" });
+
+    const waived = await verdictChange({
+      cwd,
+      lane: "architecture",
+      verdict: "waived",
+      reason: "Copy-only change with no design risk",
+      sessionPath: session,
+      now: testNow,
+    });
+    expect(waived.stress_test).toMatchObject({ verdict: "waived", reason: "Copy-only change with no design risk", outdated: false });
   });
 
   it("records source-aware progress metadata without upstream inference", async () => {

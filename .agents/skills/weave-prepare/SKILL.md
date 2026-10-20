@@ -1,7 +1,11 @@
 ---
 name: weave-prepare
-description: Prepare task execution branches for an active Weave change without implementing, verifying, committing, pushing, or opening PRs.
-last_changed_in: 0.1.8
+description: Prepare the git branches that selected tasks or slices of the active Weave change need, across every repo involved, without implementing, verifying, committing, pushing, or opening PRs. Use when the user wants to set up branches, get repos ready for execution, or check preparation before weave-execute.
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.8"
 ---
 
 > **Deprecated:** Branch preparation is now part of `/weave-execute`. Use `/weave-execute` for combined branch checkout and task implementation.

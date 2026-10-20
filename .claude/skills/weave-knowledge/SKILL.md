@@ -1,7 +1,11 @@
 ---
 name: weave-knowledge
-description: Update current-state Weave knowledge specs and change-local knowledge delta for an active change.
-last_changed_in: 0.1.0
+description: Update the repo's current-state knowledge specs under wiki/knowledge and record the change-local knowledge delta for the active Weave change, so the wiki describes how the product works once the change lands. Use after implementation, or when the user asks to update the knowledge base, wiki, or docs for a change. Not for change planning artifacts such as the PRD or architecture.
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.0"
 ---
 
 # Weave Knowledge

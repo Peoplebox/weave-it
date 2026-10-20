@@ -1,7 +1,11 @@
 ---
 name: weave-fix
-description: Chat-driven bug-fix entry point that creates a fix-type change, writes findings.md, and scaffolds a single task-slice folder.
-last_changed_in: 0.1.7
+description: Bug-fix entry point for Weave. From a chat description of the bug, creates a fix-type change, writes findings.md with the observed and expected behaviour and what is known about the cause, and scaffolds a single task slice. Use when the user reports a bug, regression, or broken behaviour and wants to fix it through Weave. Not for new features (use weave-new).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.11"
 ---
 
 # Weave Fix

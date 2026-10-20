@@ -25,6 +25,14 @@ import {
   type SwitchChangeResult,
   isChangeStage,
   isKnowledgeStatus,
+  isStressTestLane,
+  isStressTestVerdict,
+  stressTestLanes,
+  stressTestVerdicts,
+  type StressTestLane,
+  type StressTestVerdict,
+  verdictChange,
+  type VerdictChangeResult,
 } from "../lib/changes.js";
 import { withNotices } from "../lib/with-notices.js";
 
@@ -61,6 +69,11 @@ interface ChangeKnowledgeOptions extends ChangeStatusOptions {
   delta?: string;
   reason?: string;
   invalidatedBy?: string;
+}
+
+interface ChangeVerdictOptions extends ChangeStatusOptions {
+  reason?: string;
+  session?: string;
 }
 
 export function changeCommand(): Command {
@@ -136,7 +149,7 @@ export function changeCommand(): Command {
   command
     .command("progress")
     .description("Record lifecycle progress for the active change.")
-    .argument("<lane>", "lane: exploration, prd, findings, architecture, or slices", parseChangeStage)
+    .argument("<lane>", "lane: questions, research, exploration, prd, findings, architecture, or slices", parseChangeStage)
     .option("--source <source>", "source dependency: questions, research, exploration, prd, architecture, discussion, sessions, or codebase", collectValues, [])
     .option("--no-invalidate", "suppress all downstream stale propagation")
     .option(
@@ -161,7 +174,7 @@ export function changeCommand(): Command {
   command
     .command("clear-stale")
     .description("Explicitly clear a stale lane flag after content-sync verification.")
-    .argument("<lane>", "lane: exploration, prd, findings, architecture, or slices", parseChangeStage)
+    .argument("<lane>", "lane: questions, research, exploration, prd, findings, architecture, or slices", parseChangeStage)
     .option("--reason <reason>", "one-sentence verification rationale recorded in stale_history")
     .option("--json", "print machine-readable JSON")
     .action(async (lane: ChangeStage, options: ChangeClearStaleOptions) => {
@@ -170,6 +183,27 @@ export function changeCommand(): Command {
           cwd: process.cwd(),
           lane,
           reason: options.reason,
+        });
+        writeResult(result, options.json ?? false);
+      });
+    });
+
+  command
+    .command("verdict")
+    .description("Record the stress test verdict for a lane's shape.")
+    .argument("<lane>", `lane: ${stressTestLanes.join(" or ")}`, parseStressTestLane)
+    .argument("<verdict>", `verdict: ${stressTestVerdicts.join(", ")}`, parseStressTestVerdict)
+    .option("--reason <reason>", "why this verdict was given (required for waived)")
+    .option("--session <path>", "stress test session note that holds the questions and answers")
+    .option("--json", "print machine-readable JSON")
+    .action(async (lane: StressTestLane, verdict: StressTestVerdict, options: ChangeVerdictOptions) => {
+      await runAction(options.json ?? false, async () => {
+        const result = await verdictChange({
+          cwd: process.cwd(),
+          lane,
+          verdict,
+          reason: options.reason,
+          session: options.session,
         });
         writeResult(result, options.json ?? false);
       });
@@ -228,6 +262,22 @@ function parseKnowledgeStatus(value: string): KnowledgeStatus {
   throw new InvalidArgumentError(`Unsupported knowledge status: ${value}. Expected ${knowledgeStatuses.join(", ")}`);
 }
 
+function parseStressTestLane(value: string): StressTestLane {
+  if (isStressTestLane(value)) {
+    return value;
+  }
+
+  throw new InvalidArgumentError(`Unsupported stress test lane: ${value}. Expected ${stressTestLanes.join(" or ")}`);
+}
+
+function parseStressTestVerdict(value: string): StressTestVerdict {
+  if (isStressTestVerdict(value)) {
+    return value;
+  }
+
+  throw new InvalidArgumentError(`Unsupported verdict: ${value}. Expected ${stressTestVerdicts.join(", ")}`);
+}
+
 function parseChangeStage(value: string): ChangeStage {
   if ((changeStages as readonly string[]).includes(value)) {
     return value as ChangeStage;
@@ -278,7 +328,8 @@ function writeResult(
     | SwitchChangeResult
     | ProgressChangeResult
     | KnowledgeChangeResult
-    | ClearChangeStalenessResult,
+    | ClearChangeStalenessResult
+    | VerdictChangeResult,
   json: boolean,
 ): void {
   if (json) {

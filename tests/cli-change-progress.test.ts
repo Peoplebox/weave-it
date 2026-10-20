@@ -132,3 +132,43 @@ describe("change progress CLI flag wiring", () => {
     expect((status.stale as Record<string, unknown>).architecture).toBeUndefined();
   });
 });
+
+describe("change verdict CLI wiring", () => {
+  it("records a verdict pinned to the lane's latest progress", async () => {
+    const { changePath } = await setup();
+    await runChange(["progress", "exploration", "--source", "discussion", "--json"]);
+
+    const result = await runChange([
+      "verdict",
+      "exploration",
+      "holds-with-changes",
+      "--reason",
+      "Leave handling added",
+      "--session",
+      "wiki/changes/x/sessions/20260522-100000-ab12-exploration-stress-test.md",
+      "--json",
+    ]);
+
+    expect(result.status).toBe("ok");
+    expect(result.stress_test).toMatchObject({ verdict: "holds-with-changes", outdated: false, reason: "Leave handling added" });
+    const status = await readStatus(changePath);
+    const artifacts = status.artifacts as Record<string, { updated_at: string }>;
+    expect(status.stress_tests).toMatchObject({
+      exploration: {
+        verdict: "holds-with-changes",
+        artifact_updated_at: artifacts.exploration.updated_at,
+        session: "wiki/changes/x/sessions/20260522-100000-ab12-exploration-stress-test.md",
+      },
+    });
+  });
+
+  it("refuses a waived verdict without a reason", async () => {
+    await setup();
+
+    const result = await runChange(["verdict", "exploration", "waived", "--json"]);
+
+    expect(result).toMatchObject({ status: "error" });
+    expect(JSON.stringify(result)).toContain("needs --reason");
+  });
+});
+

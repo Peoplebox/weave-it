@@ -1,7 +1,11 @@
 ---
 name: weave-next
-description: Answer what to do next for the active Weave change by inspecting artifact state and resume notes without mutating files.
-last_changed_in: 0.1.9
+description: Tell the user what to do next on the active Weave change. Reads status.yml, the change artifacts, stale flags, and resume notes, then recommends exactly one next skill with the reason. Read-only, it never changes files. Use when the user asks what's next, where are we, what should I run, or seems unsure how to continue a Weave change.
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.9"
 ---
 
 # Weave Next
@@ -119,6 +123,7 @@ Source-aware stale-first recommendation:
 - stale `questions` -> run `weave-questions`
 - stale `research` -> run `weave-research`
 - stale `prd` -> run `weave-prd`
+- outdated stress test (`stress_tests.<lane>.outdated` in `weave change status --json`) -> run `weave-stress-test <lane>` again before the next lane relies on it
 - stale `architecture` -> run `weave-architect`
 - stale `slices` -> run `weave-slices`
 - Explain which upstream lane invalidated the recommendation when `invalidated_by` is present.
@@ -137,12 +142,20 @@ Research lane recommendation (the `questions` and `research` lanes are optional 
 - missing `questions.md` and `research.md` on a change that touches existing behaviour, with exploration, PRD, or architecture not yet usable -> show `weave-questions` as the `Alternate Pipeline Step`; do not make it primary over a valid resume point
 - `research.md` with open questions -> mention them in `Reason`; do not block forward progress on them
 
+Stress test gate (`status.yml.stress_tests`, verdicts `holds`, `holds-with-changes`, `needs-reshaping`, `waived`):
+
+- For `feat`, a ready `exploration.md` needs a current `exploration` verdict of `holds`, `holds-with-changes`, or `waived` before `weave-prd`. Without one, recommend `weave-stress-test exploration`, in a fresh session.
+- For `feat`, a usable architecture artifact needs a current `architecture` verdict of `holds`, `holds-with-changes`, or `waived` before `weave-slices`. Without one, recommend `weave-stress-test architecture`.
+- A `needs-reshaping` verdict -> run `weave-explore` (exploration) or `weave-architect` (architecture), starting from the session note named in `stress_tests.<lane>.session`.
+- For other change types the stress test is optional: mention it as the `Alternate Pipeline Step`, never as a blocker.
+- Mention that `weave change verdict <lane> waived --reason "..."` skips the gate only when the user asks how to skip it.
+
 Type-aware forward recommendation:
 
 - missing, scaffold-only, or not-ready `exploration.md` -> run `weave-explore`
-- ready `exploration.md` plus missing `prd.md` -> run `weave-prd`
+- ready `exploration.md` with a passing or waived stress test (or a non-`feat` change) plus missing `prd.md` -> run `weave-prd`
 - usable `prd.md` plus missing `architecture.md` -> run `weave-architect`
-- usable `architecture.md` plus no slice evidence -> run `weave-slices`
+- usable `architecture.md` with a passing or waived stress test (or a non-`feat` change) plus no slice evidence -> run `weave-slices`
 - populated `tasks.md` or obvious issue references -> implementation handoff ready
 - For `fix`, `refactor`, `docs`, `test`, `ci`, and `chore`, prefer architecture or issues when product behavior is already clear; do not require PRD just to advance.
 - For `feat`, prefer exploration or PRD when product behavior, scope, requirements, or acceptance remain unclear.
@@ -177,7 +190,7 @@ In `Current Change`, include change id, title when available, target repo or rep
 
 In `Artifact State`, summarize `questions.md` and `research.md` when present, then `exploration.md`, `prd.md`, `architecture.md`, and issue/task evidence.
 
-In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present.
+In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present, and each stress test verdict when `status.yml.stress_tests` is present (say when one is outdated).
 
 In `Resume Context`, include the latest relevant `Next Resume Point` when present.
 

@@ -1,7 +1,11 @@
 ---
 name: weave-questions
-description: Turn the active Weave change request into a short list of current-state research questions in questions.md. Use at the start of a change, before weave-research, when the work touches existing code that needs to be understood first.
-last_changed_in: 0.1.13
+description: Write a short list of current-state research questions (questions.md) for the active Weave change, covering what needs to be understood about the existing code, docs, and dependencies before anything is designed. Use at the start of a change that touches existing behaviour, before weave-research, or when the user asks what we need to find out first. The questions describe today's system only and never the planned change. Not for answering them (use weave-research).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init. Uses read-only research sub-agents when the agent supports them (installed for Claude Code by weave agent install).
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.13"
 ---
 
 # Purpose

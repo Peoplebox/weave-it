@@ -1,7 +1,11 @@
 ---
 name: weave-new
-description: Start a new Weave change exploration from a title or topic. Use when the user wants to begin capturing a change under wiki/changes and create the matching change branch.
-last_changed_in: 0.1.0
+description: Start a new Weave change for a feature, fix, refactor, or other piece of work. Creates the change folder under wiki/changes with its status.yml and the matching change/<id> git branch, then recommends the first skill to run. Use when the user wants to begin new work, open or create a change, or says things like "start a change for X". Not for saving an ongoing discussion (use weave-capture) or reporting a bug that needs diagnosis (use weave-fix).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.0"
 ---
 
 # Purpose
@@ -40,7 +44,7 @@ Use `--slug <slug>` only when the user requested a specific folder or branch slu
 - Do not create `prd.md`.
 - For `feat` changes, the CLI scaffolds `exploration.md` and starts at `stage: exploration`; treat `exploration.md` as the first artifact.
 - For non-feature changes (`fix`, `refactor`, `docs`, `test`, `ci`, `chore`), the CLI does not scaffold `exploration.md` and starts at `stage: started`. The first real artifact is created later by the fitting skill: `weave-architect` for diagnosis or RCA, `weave-issues` when the work is already clear, or `weave-prd`/`weave-explore` only when expected behavior is unclear.
-- After creating a `feat` change that touches existing behaviour, suggest `weave-questions` then `weave-research` (in a fresh session) to build a current-state baseline, followed by `weave-explore` in plan mode. For greenfield work with no existing code to understand, suggest `weave-explore` directly. Do not do any research or product discovery yourself using this skill. After creating a non-feature change, recommend the fitting next skill instead of `weave-explore`.
+- After creating a `feat` change that touches existing behaviour, suggest `weave-questions` then `weave-research` (in a fresh session) to build a current-state baseline, followed by `weave-explore` to brainstorm product directions. For greenfield work with no existing code to understand, suggest `weave-explore` directly. Do not do any research or product discovery yourself using this skill. After creating a non-feature change, recommend the fitting next skill instead of `weave-explore`.
 
 ---
 

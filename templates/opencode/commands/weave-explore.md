@@ -1,5 +1,5 @@
 ---
-description: Explore and draft a PRD using Weave context
+description: Brainstorm product directions and write the product shape for the active Weave change
 ---
 
 Load and follow the `weave-explore` skill.

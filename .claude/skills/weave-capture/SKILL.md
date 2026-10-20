@@ -1,7 +1,11 @@
 ---
 name: weave-capture
-description: Capture the current discussion into a structured session note for a Weave change, optionally updating the active change artifact.
-last_changed_in: 0.1.9
+description: Save the current discussion into the active Weave change as a structured session note, optionally updating the matching artifact (exploration.md, prd.md, findings.md, or architecture) and its lifecycle state. Use when the user says capture this, save this discussion, checkpoint, or wants decisions from a chat persisted before moving on. Not for amending an artifact after scope changes (use weave-clarify).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.9"
 ---
 
 # Purpose
@@ -212,6 +216,8 @@ Only merge artifact-relevant current truth:
 - next-phase-relevant context
 
 When the live artifact already exists, preserve its template structure and lifecycle frontmatter. When the live artifact is missing but allowed by the target rules below, create it with appropriate lifecycle frontmatter and the normal artifact structure for that lane.
+
+For `exploration.md`, use the product shape structure in `<agent-skills-dir>/weave-explore/shape-template.md` and keep it in product language. `weave-explore` normally writes the shape itself once the user picks a direction; capture is for checkpoints and for promoting pending exploration session notes.
 
 For folder-mode architecture, discover direct child template resources in the installed skill directory:
 

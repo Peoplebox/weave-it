@@ -107,6 +107,11 @@ function parseFrontmatter(content) {
     if (fieldMatch) {
       fields[fieldMatch[1]] = fieldMatch[2].trim();
     }
+    // `last_changed_in` lives under the Agent Skills `metadata` map.
+    const nestedMatch = /^\s+last_changed_in:\s*(.*)$/.exec(line);
+    if (nestedMatch) {
+      fields.last_changed_in = nestedMatch[1].trim();
+    }
   }
   return fields;
 }
@@ -115,12 +120,26 @@ function applyLastChangedIn(content, version) {
   const frontmatterMatch = /^(---\n)([\s\S]*?)(\n---)/.exec(content);
   if (!frontmatterMatch) return content;
   const block = frontmatterMatch[2];
-  if (/^last_changed_in:\s*/m.test(block)) {
-    const updatedBlock = block.replace(/^last_changed_in:\s*.*$/m, `last_changed_in: ${version}`);
-    return content.replace(block, updatedBlock);
+  const nestedLine = `  last_changed_in: "${version}"`;
+
+  // Drop the legacy top-level field; the version is written under `metadata`.
+  let lines = block.split("\n").filter((line) => !/^last_changed_in:\s*/.test(line));
+  const nestedIndex = lines.findIndex((line) => /^\s+last_changed_in:\s*/.test(line));
+  if (nestedIndex !== -1) {
+    lines[nestedIndex] = nestedLine;
+  } else {
+    const metadataIndex = lines.findIndex((line) => /^metadata:\s*$/.test(line));
+    if (metadataIndex !== -1) {
+      let insertAt = metadataIndex + 1;
+      while (insertAt < lines.length && /^\s+\S/.test(lines[insertAt])) insertAt += 1;
+      lines.splice(insertAt, 0, nestedLine);
+    } else {
+      lines = [...lines, "metadata:", nestedLine];
+    }
   }
-  const updatedBlock = `${block}\nlast_changed_in: ${version}`;
-  return content.replace(block, updatedBlock);
+
+  const updatedBlock = lines.join("\n");
+  return updatedBlock === block ? content : content.replace(block, updatedBlock);
 }
 
 main().catch((error) => {

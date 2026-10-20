@@ -652,24 +652,29 @@ function parseSkillFrontmatter(
     throw new Error(`Missing frontmatter in ${sourcePath}`);
   }
 
-  const metadata = YAML.parse(match[1]) as Partial<{
+  const frontmatter = YAML.parse(match[1]) as Partial<{
     name: string;
     description: string;
+    metadata: Record<string, unknown>;
     last_changed_in: string | number;
   }>;
-  if (!metadata.name || !metadata.description) {
+  if (!frontmatter.name || !frontmatter.description) {
     throw new Error(`Skill frontmatter in ${sourcePath} must include name and description`);
   }
-  if (metadata.last_changed_in === undefined || metadata.last_changed_in === null || metadata.last_changed_in === "") {
+
+  // Agent Skills keeps client-specific fields under `metadata`; the top-level
+  // `last_changed_in` is the legacy location and is still accepted.
+  const lastChangedIn = frontmatter.metadata?.last_changed_in ?? frontmatter.last_changed_in;
+  if (lastChangedIn === undefined || lastChangedIn === null || lastChangedIn === "") {
     throw new Error(
-      `Skill frontmatter in ${sourcePath} must include last_changed_in (the weave-it package version of the last skill change)`,
+      `Skill frontmatter in ${sourcePath} must include metadata.last_changed_in (the weave-it package version of the last skill change)`,
     );
   }
 
   return {
-    name: metadata.name,
-    description: metadata.description,
-    lastChangedIn: String(metadata.last_changed_in),
+    name: frontmatter.name,
+    description: frontmatter.description,
+    lastChangedIn: String(lastChangedIn),
   };
 }
 

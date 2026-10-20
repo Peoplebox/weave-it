@@ -33,10 +33,19 @@ const bundledSkillNames = [
   "weave-questions",
   "weave-research",
   "weave-slices",
+  "weave-stress-test",
+] as const;
+
+const researchSubagentNames = [
+  "weave-analyzer",
+  "weave-locator",
+  "weave-pattern-finder",
+  "weave-web-researcher",
 ] as const;
 
 const bundledSubagentNames = [
   "weave-analyzer",
+  "weave-challenger",
   "weave-locator",
   "weave-pattern-finder",
   "weave-web-researcher",
@@ -51,7 +60,7 @@ const installedAgentDestinations = [
 // installed copies under .agents/.claude are unpublished dogfood artifacts, so
 // compare skill bodies and ignore this release-version metadata line.
 function stripVolatileSkillMetadata(content: string): string {
-  return content.replace(/^last_changed_in:\s*.*$/m, "last_changed_in: <ignored>");
+  return content.replace(/^(\s*)last_changed_in:\s*.*$/m, "$1last_changed_in: <ignored>");
 }
 
 async function assertSkillBlockPresence(
@@ -85,32 +94,29 @@ async function readManifest(cwd: string): Promise<unknown> {
 }
 
 describe("agent skills", () => {
-  it("ships weave-explore as a canonical Agent Skills template", async () => {
+  it("ships weave-explore as a product brainstorm-then-shape skill", async () => {
     const skill = await readDefaultSkill("weave-explore");
 
     expect(skill.name).toBe("weave-explore");
-    expect(skill.description).toContain("Stress-test product requirements");
-    expect(skill.content).toContain("# Plan Mode Guard");
-    expect(skill.content).toContain("This skill must run in Plan Mode. Switch to Plan Mode, then invoke weave-explore again.");
-    expect(skill.content).toContain("Static Weave skill content cannot automatically switch collaboration mode");
-    expect(skill.content).toContain("resolves the active branch-derived change");
-    expect(skill.content).toContain("does not write local artifact lane state");
-    expect(skill.content).toContain("Do not write repo-tracked artifacts directly");
-    expect(skill.content).not.toContain("# Plan Mode Protocol");
+    expect(skill.description).toContain("Product brainstorming partner");
+    expect(skill.content).not.toContain("# Plan Mode Guard");
     expect(skill.content).toContain("weave workspace --json");
     expect(skill.content).not.toContain("weave artifact current");
-    expect(skill.content).toContain("# Workspace Repo Context Protocol");
     expect(skill.content).toContain("Registered entries in `repos[]` are implementation and documentation locations inside that workspace, not separate artifact targets.");
-    expect(skill.content).toContain("Lightly inventory all registered repos. Deeply inspect only repos that appear relevant");
-    expect(skill.content).toContain("Prefer current docs, knowledge specs, ADRs, and repo-local Weave wiki content before reading implementation code.");
-    expect(skill.content).toContain("Repos skipped: <repo id> (<reason>)");
-    expect(skill.content).toContain("# Sub-Repo Product Discovery");
-    expect(skill.content).toContain("Translate technical findings into product behavior questions.");
+    expect(skill.content).toContain("## 1. Open with options");
+    expect(skill.content).toContain("## 2. Talk it through");
+    expect(skill.content).toContain("## 3. Pin down the chosen direction");
+    expect(skill.content).toContain("# Product Language Only");
+    expect(skill.content).toContain("Write `exploration.md` only after the user confirms a direction.");
+    expect(skill.content).toContain("weave change progress exploration --source discussion --json");
     expect(skill.content).toContain("`weave-explore` means enter or resume exploration for the active change.");
     expect(skill.content).toContain("Read `wiki/changes/<change-id>/exploration.md` first. Treat the live artifact as canonical current truth.");
     expect(skill.content).toContain("sessions/*-exploration.md");
     expect(skill.content).toContain("Prioritize the latest `## Next Resume Point`");
     expect(skill.content).toContain("Loaded exploration.md and <N> exploration session note(s).");
+    await expect(
+      readFile(path.join(process.cwd(), "templates", "skills", "weave-explore", "shape-template.md"), "utf8"),
+    ).resolves.toContain("## Options Considered");
     expect(skill.sourcePath).toContain(path.join("templates", "skills", "weave-explore", "SKILL.md"));
     expect(skill.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
@@ -120,7 +126,7 @@ describe("agent skills", () => {
     const template = await readFile(path.join(process.cwd(), "templates", "skills", "weave-prd", "prd-template.md"), "utf8");
 
     expect(skill.name).toBe("weave-prd");
-    expect(skill.description).toContain("Generate or revise prd.md");
+    expect(skill.description).toContain("Write or revise prd.md");
     expect(skill.content).toContain("Treat `prd.md` as a living product artifact");
     expect(skill.content).toContain("Do not require `exploration.md` before generating or revising `prd.md`");
     expect(skill.content).toContain("interview the user until the PRD can stand alone");
@@ -157,7 +163,7 @@ describe("agent skills", () => {
     const skill = await readDefaultSkill("weave-architect");
 
     expect(skill.name).toBe("weave-architect");
-    expect(skill.description).toContain("Read-only thinking partner");
+    expect(skill.description).toContain("Engineering design partner");
     expect(skill.content).toContain("# Plan Mode Guard");
     expect(skill.content).toContain("This skill must run in Plan Mode. Switch to Plan Mode, then invoke weave-architect again.");
     expect(skill.content).toContain("Static Weave skill content cannot automatically switch collaboration mode");
@@ -277,7 +283,7 @@ describe("agent skills", () => {
     const skill = await readDefaultSkill("weave-next");
 
     expect(skill.name).toBe("weave-next");
-    expect(skill.description).toContain("Answer what to do next");
+    expect(skill.description).toContain("Tell the user what to do next");
     expect(skill.content).toContain("`weave-next` is read-only advisory");
     expect(skill.content).not.toContain("# Plan Mode Guard");
     expect(skill.content).toContain("Do not require Plan Mode.");
@@ -307,7 +313,7 @@ describe("agent skills", () => {
     const template = await readFile(path.join(process.cwd(), "templates", "skills", "weave-knowledge", "knowledge-templates.md"), "utf8");
 
     expect(skill.name).toBe("weave-knowledge");
-    expect(skill.description).toContain("Update current-state Weave knowledge specs");
+    expect(skill.description).toContain("current-state knowledge specs");
     expect(skill.content).toContain("Knowledge is current-state behavior");
     expect(skill.content).toContain("Do not hand-edit `status.yml`; use `weave change knowledge <status>`.");
     expect(skill.content).toContain("wiki/changes/<change-id>/knowledge-delta.md");
@@ -335,7 +341,7 @@ describe("agent skills", () => {
     const skill = await readDefaultSkill("weave-prepare");
 
     expect(skill.name).toBe("weave-prepare");
-    expect(skill.description).toContain("Prepare task execution branches");
+    expect(skill.description).toContain("Prepare the git branches");
     expect(skill.content).toContain("Prepare means branch readiness only");
     expect(skill.content).toContain("weave task prepare --json");
     expect(skill.content).toContain("slice/task selection belongs to `/weave-execute`");
@@ -349,7 +355,7 @@ describe("agent skills", () => {
     const skill = await readDefaultSkill("weave-execute");
 
     expect(skill.name).toBe("weave-execute");
-    expect(skill.description).toContain("Execute selected local Weave tasks");
+    expect(skill.description).toContain("Implement selected tasks");
     expect(skill.content).toContain("Execution means: resolve the active change, read `tasks.md`, resolve the user's selector");
     expect(skill.content).toContain("/weave-execute T1 T3 T7");
     expect(skill.content).toContain("What should I execute: all tasks, a scope like backend, or specific task ids like T1 T3?");
@@ -413,12 +419,33 @@ describe("agent skills", () => {
     expect(skill.content).toContain("Read `wiki/changes/<change-id>/questions.md` in full. It is the research brief.");
     expect(skill.content).toContain("Do not read `exploration.md`, `prd.md`, `findings.md`, `architecture/`, `sessions/`, or tickets");
     expect(skill.content).toContain("weave change progress research --source questions --source codebase --json");
-    for (const subagent of bundledSubagentNames) {
+    for (const subagent of researchSubagentNames) {
       expect(skill.content).toContain(`\`${subagent}\``);
     }
     await expect(
       readFile(path.join(process.cwd(), "templates", "skills", "weave-research", "research-template.md"), "utf8"),
     ).resolves.toContain("## Code References");
+  });
+
+  it("ships weave-stress-test as an independent critique-then-interview skill", async () => {
+    const skill = await readDefaultSkill("weave-stress-test");
+
+    expect(skill.content).toContain("`weave-challenger`");
+    expect(skill.content).toContain("Do not read the brainstorm session notes");
+    expect(skill.content).toContain("sessions/YYYYMMDD-HHMMSS-<4-char-id>-<lane>-stress-test.md");
+    expect(skill.content).toContain("weave change verdict <lane> <verdict> --session <session-note-path>");
+    expect(skill.content).toContain("Never waive on the user's behalf.");
+    // Stress test notes must not match the `*-<lane>.md` brainstorm session pattern.
+    expect(skill.content).not.toMatch(/stress-test-<lane>\.md/);
+  });
+
+  it("ships weave-challenger as a critic that never sees the conversation", async () => {
+    const challenger = await readFile(path.join(process.cwd(), "templates", "agents", "weave-challenger.md"), "utf8");
+
+    expect(challenger).toContain("You never see the conversation that produced the shape");
+    expect(challenger).toContain("**product**");
+    expect(challenger).toContain("**engineering**");
+    expect(challenger).toContain("Do not redesign the shape");
   });
 
   it("ships read-only research subagents with restricted tools", async () => {
@@ -474,12 +501,49 @@ describe("agent skills", () => {
     await expect(readFile(installedPath, "utf8")).resolves.toBe(template);
   });
 
-  it("ships every bundled SKILL.md template with a last_changed_in frontmatter field", async () => {
+  it("ships every bundled SKILL.md template with metadata.last_changed_in", async () => {
     const skills = await listDefaultSkills();
     expect(skills.length).toBeGreaterThanOrEqual(9);
     for (const skill of skills) {
       expect(skill.lastChangedIn).toMatch(/^\d+\.\d+\.\d+/);
     }
+  });
+
+  it("ships every bundled skill with Agent Skills spec-compliant frontmatter", async () => {
+    const allowedFields = ["name", "description", "license", "compatibility", "metadata", "allowed-tools"];
+    for (const skill of await listDefaultSkills()) {
+      const frontmatter = YAML.parse(/^---\n([\s\S]*?)\n---/.exec(skill.content)?.[1] ?? "") as Record<string, unknown>;
+      const where = skill.sourcePath;
+
+      expect(Object.keys(frontmatter).filter((key) => !allowedFields.includes(key)), `${where} has non-spec fields`).toEqual([]);
+      expect(frontmatter.name, where).toBe(path.basename(path.dirname(skill.sourcePath)));
+      expect(String(frontmatter.name), where).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(String(frontmatter.name).length, where).toBeLessThanOrEqual(64);
+      expect(typeof frontmatter.description, where).toBe("string");
+      expect(String(frontmatter.description).length, where).toBeGreaterThan(0);
+      expect(String(frontmatter.description).length, where).toBeLessThanOrEqual(1024);
+      expect(String(frontmatter.description), `${where} should say when to use it`).toMatch(/\bUse (when|after|at)\b/);
+      expect(frontmatter.license, where).toBe("MIT");
+      expect(String(frontmatter.compatibility ?? "").length, where).toBeLessThanOrEqual(500);
+      const metadata = frontmatter.metadata as Record<string, unknown>;
+      for (const [key, value] of Object.entries(metadata)) {
+        expect(typeof value, `${where} metadata.${key} must be a string`).toBe("string");
+      }
+      expect(metadata.last_changed_in, where).toMatch(/^\d+\.\d+\.\d+/);
+      expect(skill.content.split("\n").length, `${where} should stay under 500 lines`).toBeLessThan(500);
+    }
+  });
+
+  it("reads the legacy top-level last_changed_in when metadata does not set it", async () => {
+    const templatesDir = await tempDir();
+    const skillDir = path.join(templatesDir, "legacy-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      path.join(skillDir, "SKILL.md"),
+      "---\nname: legacy-skill\ndescription: Legacy\nlast_changed_in: 0.1.0\n---\n\nBody\n",
+    );
+
+    await expect(readDefaultSkill("legacy-skill", { templatesDir })).resolves.toMatchObject({ lastChangedIn: "0.1.0" });
   });
 
   it("throws a descriptive error when a bundled template is missing last_changed_in", async () => {
@@ -534,11 +598,8 @@ describe("agent skills", () => {
     }
   });
 
-  it("embeds the Plan Mode Guard verbatim in weave-explore and weave-architect only", async () => {
-    const planModeRequired = [
-      { skill: "weave-explore", lane: "exploration" },
-      { skill: "weave-architect", lane: "architecture" },
-    ] as const;
+  it("embeds the Plan Mode Guard verbatim in weave-architect only", async () => {
+    const planModeRequired = [{ skill: "weave-architect", lane: "architecture" }] as const;
     for (const { skill, lane } of planModeRequired) {
       const expected = EXPECTED_PLAN_MODE_GUARD
         .replaceAll("<lane>", lane)
@@ -549,6 +610,8 @@ describe("agent skills", () => {
 
   it("embeds the Lifecycle Staleness Verification Protocol verbatim in every progress-calling skill", async () => {
     const progressCallers = [
+      "weave-explore",
+      "weave-stress-test",
       "weave-questions",
       "weave-research",
       "weave-prd",
@@ -576,6 +639,8 @@ describe("agent skills", () => {
       "weave-execute",
       "weave-questions",
       "weave-research",
+      "weave-explore",
+      "weave-stress-test",
     ] as const;
     for (const skill of notPlanModeRequired) {
       const templatePath = path.join(process.cwd(), "templates", "skills", skill, "SKILL.md");
@@ -614,7 +679,7 @@ describe("agent skills", () => {
     const skill = await readDefaultSkill("weave-clarify");
 
     expect(skill.name).toBe("weave-clarify");
-    expect(skill.description).toContain("Clarify and revise one existing Weave change artifact");
+    expect(skill.description).toContain("Revise one existing Weave change artifact");
     expect(skill.content).toContain("Treat the selected target artifact as the only write target");
     expect(skill.content).toContain("Supported target artifacts");
     expect(skill.content).toContain("Do not edit follow-up artifacts");
@@ -650,12 +715,12 @@ describe("agent skills", () => {
         }),
         expect.objectContaining({
           name: "weave-new",
-          description: expect.stringContaining("Start a new Weave change exploration"),
+          description: expect.stringContaining("Start a new Weave change"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-next",
-          description: expect.stringContaining("Answer what to do next"),
+          description: expect.stringContaining("Tell the user what to do next"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
@@ -665,42 +730,42 @@ describe("agent skills", () => {
         }),
         expect.objectContaining({
           name: "weave-fix",
-          description: expect.stringContaining("bug-fix"),
+          description: expect.stringContaining("Bug-fix entry point"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-knowledge",
-          description: expect.stringContaining("Update current-state Weave knowledge specs"),
+          description: expect.stringContaining("current-state knowledge specs"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-prepare",
-          description: expect.stringContaining("Prepare task execution branches"),
+          description: expect.stringContaining("Prepare the git branches"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-execute",
-          description: expect.stringContaining("Execute selected local Weave tasks"),
+          description: expect.stringContaining("Implement selected tasks"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-explore",
-          description: expect.stringContaining("Stress-test product requirements"),
+          description: expect.stringContaining("Product brainstorming partner"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-prd",
-          description: expect.stringContaining("Generate or revise prd.md"),
+          description: expect.stringContaining("Write or revise prd.md"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-architect",
-          description: expect.stringContaining("Read-only thinking partner"),
+          description: expect.stringContaining("Engineering design partner"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
         expect.objectContaining({
           name: "weave-clarify",
-          description: expect.stringContaining("Clarify and revise one existing Weave change artifact"),
+          description: expect.stringContaining("Revise one existing Weave change artifact"),
           hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         }),
       ]),

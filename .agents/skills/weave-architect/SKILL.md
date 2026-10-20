@@ -1,7 +1,11 @@
 ---
 name: weave-architect
-description: Read-only thinking partner for active Weave architecture work. Use when the user wants engineering architecture, technical design, implementation strategy, tradeoff analysis, risk review, or a deep dive into an existing architecture facet.
-last_changed_in: 0.1.9
+description: Engineering design partner for the active Weave change. Reads the PRD, research.md, and code, then works through technical approaches, trade-offs, risks, data and API contracts with the user, and returns an architecture dissection for weave-capture to save. Use when the user wants technical design, an implementation strategy, trade-off analysis, a risk review, or a deep dive into an architecture facet. Not for product decisions (use weave-explore) or splitting work into tasks (use weave-slices).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.9"
 ---
 
 # Weave Architect

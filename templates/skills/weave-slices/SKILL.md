@@ -1,7 +1,11 @@
 ---
 name: weave-slices
-description: Scaffold task-slices folders from upstream artifacts using tracer-bullet vertical slices, per-slice tasks, and slice-level technical contracts.
-last_changed_in: 0.1.11
+description: Break the active Weave change's architecture into tracer-bullet vertical slices under task-slices/, each with its own tasks, technical contract, and dependencies, plus a dependency graph. Use when the design is ready and the user wants tasks, slices, a work breakdown, or an implementation plan. Not for the technical design itself (use weave-architect) or for implementing tasks (use weave-execute).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.11"
 ---
 
 # Weave Slices

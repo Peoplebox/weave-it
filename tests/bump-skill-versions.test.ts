@@ -31,6 +31,15 @@ async function writeSkill(root: string, name: string, lastChangedIn: string, bod
   await mkdir(skillDir, { recursive: true });
   await writeFile(
     path.join(skillDir, "SKILL.md"),
+    `---\nname: ${name}\ndescription: Skill ${name}\nlicense: MIT\nmetadata:\n  author: weave-tools\n  last_changed_in: "${lastChangedIn}"\n---\n\n${body}\n`,
+  );
+}
+
+async function writeLegacySkill(root: string, name: string, lastChangedIn: string, body = "Body"): Promise<void> {
+  const skillDir = path.join(root, "templates", "skills", name);
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, "SKILL.md"),
     `---\nname: ${name}\ndescription: Skill ${name}\nlast_changed_in: ${lastChangedIn}\n---\n\n${body}\n`,
   );
 }
@@ -42,7 +51,7 @@ function runBump(cwd: string): { status: number | null; stdout: string; stderr: 
 
 async function readLastChangedIn(root: string, name: string): Promise<string | null> {
   const content = await readFile(path.join(root, "templates", "skills", name, "SKILL.md"), "utf8");
-  const match = /^last_changed_in:\s*(.*)$/m.exec(content);
+  const match = /^\s*last_changed_in:\s*"?([^"\n]*)"?$/m.exec(content);
   return match?.[1] ?? null;
 }
 
@@ -95,6 +104,32 @@ describe("scripts/bump-skill-versions.mjs", () => {
     expect(result.status).toBe(0);
     expect(result.stdout + result.stderr).toMatch(/last_changed_in missing/);
     expect(await readLastChangedIn(root, "weave-no-version")).toBe("0.2.0");
+  });
+
+  it("moves a legacy top-level last_changed_in under metadata when bumping", async () => {
+    const root = await makeFakeRepo();
+    await writeLegacySkill(root, "weave-legacy", "0.1.0");
+    git(root, ["add", "."]);
+    git(root, ["commit", "-q", "-m", "initial"]);
+
+    const result = runBump(root);
+    expect(result.status).toBe(0);
+
+    const content = await readFile(path.join(root, "templates", "skills", "weave-legacy", "SKILL.md"), "utf8");
+    expect(content).not.toMatch(/^last_changed_in:/m);
+    expect(content).toContain('metadata:\n  last_changed_in: "0.2.0"\n---');
+  });
+
+  it("keeps other metadata keys when bumping", async () => {
+    const root = await makeFakeRepo();
+    await writeSkill(root, "weave-explore", "0.1.0");
+    git(root, ["add", "."]);
+    git(root, ["commit", "-q", "-m", "initial"]);
+
+    runBump(root);
+
+    const content = await readFile(path.join(root, "templates", "skills", "weave-explore", "SKILL.md"), "utf8");
+    expect(content).toContain('metadata:\n  author: weave-tools\n  last_changed_in: "0.2.0"\n---');
   });
 
   it("never invokes git commit or git tag (audit by snapshotting git log)", async () => {

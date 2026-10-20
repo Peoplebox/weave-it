@@ -1,132 +1,57 @@
 ---
 name: weave-explore
-description: Stress-test product requirements against the current system, workflows, and domain language. Use when refining PRDs, validating workflows, uncovering edge cases, clarifying ownership, or aligning new changes with existing product behavior.
-last_changed_in: 0.1.9
+description: Product brainstorming partner for the active Weave change. Proposes and compares two to four product directions grounded in research.md and the knowledge wiki, talks them through in plain product language with no technical jargon, and once the user picks a direction writes the product shape to exploration.md. Use when the user wants to brainstorm, explore options, think through what to build, or shape a feature before a PRD. Not for technical design (use weave-architect) or writing the PRD (use weave-prd).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.9"
 ---
 
-# Weave Awareness
+# Purpose
 
-This is a Weave product exploration skill.
+Help the user work out **what the product should do** for the active change, by brainstorming directions together before settling on one. When the user decides, write the result to `exploration.md` as a product shape that `weave-prd` can turn into requirements.
 
----
+This skill is for product thinking. Its audience may be a PM, a designer, or an engineer wearing a product hat. Keep everything in the language of users, workflows, and outcomes. Technical design belongs in `weave-architect`.
 
-# Plan Mode Guard
+Start with options rather than an interview. People usually can't answer detailed questions until they have seen a few possible shapes and reacted to them, so the detailed questions come last and only for the direction that was chosen.
 
-This skill must run in Plan Mode.
-
-If the current environment exposes collaboration mode and it is not Plan Mode, stop immediately and say:
-
-`This skill must run in Plan Mode. Switch to Plan Mode, then invoke weave-explore again.`
-
-Do not inspect deeply, ask discovery questions, update artifacts, or continue work before this guard passes.
-
-Static Weave skill content cannot automatically switch collaboration mode. The host, user, or developer layer must switch modes before this skill continues.
-
-In Plan Mode, this skill resolves the active branch-derived change and treats `exploration` as the explicit target lane. It does not write local artifact lane state.
-
-Do not write repo-tracked artifacts directly. Produce the plan, decisions, questions, or proposed artifact changes needed for the user to approve. Actual artifact writes happen only after the user exits Plan Mode and asks to implement the plan.
-
----
-
-Start by discovering the current Weave session:
+# Resolve Context
 
 ```bash
 weave workspace --json
 weave change current --json
+weave change status --json
 ```
 
-Use the cwd-dispatched workspace or repo context returned by `weave workspace --json` as the exploration boundary. In workspace mode, the workspace root owns the change store and registered sub-repos in `repos[]` are implementation locations inside that single context. In repo mode, the active session's folders are the boundary. If there is no active Weave change, stop and ask the user to run `weave change new` or `weave change switch` before continuing.
+If there is no active change, stop and ask the user to run `weave change new` or `weave change switch`.
 
-# Workspace Repo Context Protocol
+In workspace mode, `workspace.path` is the single artifact root. Registered entries in `repos[]` are implementation and documentation locations inside that workspace, not separate artifact targets. Look only at repos that appear relevant to the change.
 
-When `weave workspace --json` returns a `workspace` object, treat `workspace.path` as the single Weave change artifact root. Registered entries in `repos[]` are implementation and documentation locations inside that workspace, not separate artifact targets.
+# Load Context
 
-Do not create, read, or update change artifacts under each sub-repo by default. Durable change artifacts remain under:
+Read, in this order, whatever exists:
 
-```text
-<workspace.path>/wiki/changes/<change-id>/
-```
+1. `wiki/changes/<change-id>/research.md` — how the system works today. Treat it as the factual baseline.
+2. `wiki/knowledge/` — current product and domain behaviour (`index.md`, relevant `domains/**`, `shared/**`).
+3. `wiki/changes/<change-id>/exploration.md` and `sessions/*-exploration.md`, newest first — for resuming.
+4. Repo docs such as `README.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and `docs/adr/` for domain terms, when knowledge is thin.
 
-Before deep inspection, build a lightweight repo context map from `repos[]`:
+Do not read `prd.md`, `architecture/`, `tasks.md`, or implementation plans. Exploration comes before them, and reading them pulls the conversation toward solutions already written down.
 
-- repo id
-- repo path
-- repo kind
-- remote, when present
-- whether the repo appears relevant to the current user request
-- docs and knowledge surfaces present, such as `README.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/`, `docs/adr/`, `adr/`, `wiki/knowledge/`, `wiki/changes/`, `specs/`
-- obvious code/test surfaces that may verify current behavior
+If `research.md` is missing and the change touches existing behaviour, say once that `weave-questions` then `weave-research` (in a fresh session) would give the brainstorm a factual baseline. Continue if the user wants to proceed without it, and verify only the specific behaviours the conversation depends on by reading code or docs yourself.
 
-Lightly inventory all registered repos. Deeply inspect only repos that appear relevant from the user's request, active change artifacts, repo names/kinds, docs, knowledge, prior changes, or code references.
-
-Prefer current docs, knowledge specs, ADRs, and repo-local Weave wiki content before reading implementation code. Use code and tests to verify important claims from docs or memory.
-
-If a repo is skipped, keep the reason simple: unrelated name/kind, no matching docs, no matching code references, or out of scope for the current question.
-
-When presenting findings, include a short context note:
-
-```text
-Context loaded:
-- Workspace artifact root: <path>
-- Repos inspected: <repo ids>
-- Repo docs/knowledge read: <paths>
-- Code/test anchors read: <paths>
-- Repos skipped: <repo id> (<reason>)
-```
-
-Do not exhaustively scan every repo unless the user explicitly asks for a workspace-wide audit.
-
----
-
-For each resolved context, inspect Weave knowledge first when present:
-
-```text
-wiki/knowledge/index.md
-wiki/knowledge/README.md
-wiki/knowledge/domains/**/index.md
-wiki/knowledge/domains/**/features/**/behavior.md
-wiki/knowledge/domains/**/domain-wide/**
-wiki/knowledge/shared/**/behavior.md
-wiki/knowledge/**/source-map.md
-wiki/changes/
-```
-
-Use `wiki/knowledge/` as current product/domain context.
-
-Use `wiki/changes/` as historical or in-progress change context.
-
-If a relevant change folder exists, read the applicable change artifacts:
-
-```text
-exploration.md
-prd.md
-sessions/*-exploration.md
-decisions.md
-contracts.md
-status.yml
-handoff.md
-implementation.md
-tasks.md
-```
-
-In workspace mode there is one change context: the workspace root. In repo mode, do not assume every session folder is equally relevant; identify which contexts appear relevant and why.
-
----
-
-# Resume Context
+## Resuming
 
 `weave-explore` means enter or resume exploration for the active change.
 
-When an active change already has exploration context, resume before asking new discovery questions:
+If `exploration.md` already has substance or exploration session notes exist:
 
 1. Read `wiki/changes/<change-id>/exploration.md` first. Treat the live artifact as canonical current truth.
-2. Read relevant `wiki/changes/<change-id>/sessions/*-exploration.md` files newest-first.
-3. Prioritize the latest `## Next Resume Point` when deciding what to ask or examine next.
-4. Use older exploration session files only when needed for rationale, unresolved points, user preferences, or agent recommendations.
-5. If session notes conflict with the live artifact, prefer the live artifact unless the latest session records an explicit newer user decision.
-6. If the user gives an explicit direction, follow it over the stored resume point.
+2. Read `sessions/*-exploration.md` newest first. Prioritize the latest `## Next Resume Point`.
+3. Prefer the live artifact over older notes unless the latest note records an explicit newer user decision. An explicit direction from the user right now beats both.
 
-At the start of a resumed exploration, briefly state what was loaded:
+Then say briefly what you loaded:
 
 ```text
 Resuming exploration for <change-id>.
@@ -134,276 +59,165 @@ Loaded exploration.md and <N> exploration session note(s).
 Latest resume point: <summary>
 ```
 
-If no useful prior exploration content or session notes exist, start normal exploration.
+# How the Conversation Works
 
----
+The conversation moves through three modes. Move forward when the user is ready, and go back whenever they want; they are not gates.
 
-# Current-State Research
+## 1. Open with options
 
-`weave-explore` is product discovery. Facts about how the system works today belong in `wiki/changes/<change-id>/research.md`, written by `weave-research` from `questions.md`.
+Start with a short message:
 
-- If `research.md` exists, read it before asking discovery questions and treat it as the current-state baseline. Use it to ground scenarios, call out contradictions, and avoid asking the user things the research already answers.
-- Do not repeat research that `research.md` already covers. Inspect code yourself only to confirm a specific behaviour the conversation depends on, or to fill a small gap.
-- If `research.md` is missing and the change touches existing behaviour, say once that `weave-questions` then `weave-research` (in a fresh session) would give exploration a factual baseline, then continue if the user wants to proceed without it.
-- If you find that `research.md` is wrong or out of date, say so and suggest re-running `weave-research`; do not edit it from this skill.
-- When `research.md` informed the exploration, the capture that persists it should record `--source research` alongside `--source discussion`.
+- **The problem**, restated in two or three sentences so the user can correct it.
+- **What exists today**, in product terms, from `research.md` and knowledge.
+- **Two to four directions.** Make them genuinely different, not variations of one idea, and include a minimal "smallest thing that solves it" option. For each direction give:
+  - what it means for the people using it
+  - what it gives up or makes harder
+  - rough size (small, medium, large) and the main risk
+- One open question, such as: *"Which of these is closest, what's missing, or what would you change?"*
 
----
+Do not recommend a direction in the first message unless the user asks. Give them room to react first.
 
-# Purpose
+## 2. Talk it through
 
-This skill helps refine product requirements by interrogating workflows, domain language, permissions, lifecycle behavior, operational expectations, and edge cases.
+Follow the user's thread. Useful moves:
 
-The goal is to clarify:
-- what the system should do
-- who experiences it
-- how it behaves in real scenarios
-- how it fits into the existing product model
+- combine parts of two directions, or propose a new one when the discussion reveals a better shape
+- walk through a concrete scenario with named roles ("Priya submits, her manager is on leave…")
+- play devil's advocate on the direction the user is leaning towards
+- point out where an idea conflicts with how the product works today
+- share your recommendation and why, once the user has reacted to the options
 
-This is a product discovery and requirement clarification exercise - not an architecture review.
+There is no question quota in this mode, and you do not need to ask one question per message. Keep messages short enough to answer.
 
----
+## 3. Pin down the chosen direction
 
-# Core Behavior
+When the user leans clearly towards one direction, confirm it, then ask the questions that decide its shape, one at a time, with your suggested answer and why:
 
-Interview the user relentlessly about the product behavior until a shared understanding is reached.
-
-Ask questions one at a time and wait for the user's response before continuing.
-
-For each question:
-- explain why the question matters
-- provide a likely/default recommendation
-- explain implications of alternative choices
-- keep the discussion grounded in user and business behavior
-- avoid implementation details unless explicitly requested
-
-Prefer:
-- concrete scenarios
-- user journeys
-- lifecycle transitions
-- ownership clarification
-- operational edge cases
-
-Avoid:
-- infrastructure discussions
-- database choices
-- eventing strategies
-- APIs
-- storage design
-- deployment architecture
-- framework discussions
-
-unless the user explicitly asks for technical design.
-
----
-
-# Discovery Order
-
-Resolve questions in this order:
-
-1. Domain language
-2. Users, actors, and roles
-3. User workflows
+1. Domain language: what each key term means
+2. Who is involved: users, roles, and owners
+3. The main workflows, start to finish
 4. Permissions and admin controls
-5. State transitions and lifecycle rules
+5. States and lifecycle: what can change, and when it locks
 6. Failure cases and edge cases
 7. Notifications and visibility
-8. Operational expectations
-9. Rollout flags, configuration, rollout scope, and migration concerns
-10. Technical implications (only if required)
+8. Rollout: flags, configuration, migration of existing users or data
 
-Do not jump into technical implementation prematurely.
+Skip what the conversation already settled. Ask only what matters for this direction.
 
----
+## Steering phrases
 
-# Technical Boundary
+Respond to these whenever the user uses them:
 
-Prefer `research.md` for current-state facts. Beyond that, you may inspect the codebase to:
-- understand existing workflows
-- identify terminology
-- discover current constraints
-- detect contradictions
-- understand current product behavior
-- uncover hidden assumptions
+| The user says | You |
+| --- | --- |
+| "more options", "what else?" | propose new directions, different from those already discussed |
+| "go deeper on B" | expand B: scenarios, trade-offs, open questions |
+| "what would you do?" | give your recommendation and the reasons |
+| "interview me" | switch to mode 3 for the current leading direction |
+| "we've decided", "lock it in", "write it up" | confirm the direction, then write the shape |
+| "pause", "save for later" | suggest `weave-capture session exploration` to checkpoint without a decision |
 
-Use the codebase to anchor the conversation in reality.
+# Product Language Only
 
-But do NOT ask users to choose:
-- databases
-- queues
-- event buses
-- consistency models
-- storage engines
-- deployment patterns
-- API styles
-- frameworks
+Everything you say should make sense to someone who has never seen the code.
 
-unless:
-1. the user explicitly requests technical design
-2. or the decision materially changes product behavior, compliance, or operational guarantees
+- Translate research. `research.md` is full of files, functions, and schemas. Say what they mean for users: "today a review is finalised all at once", not "`finalizeReview()` updates every item".
+- Do not show code, schemas, APIs, or infrastructure details unless the user explicitly asks.
+- Translate technical concerns into behaviour questions. Instead of "should this be eventually consistent?", ask "is it acceptable if other people see the update a few seconds later?"
+- Note technical implications without resolving them. Record them as assumptions or open questions for `weave-architect`, and keep going.
+- Sharpen vague terms. If the user says "manager", ask whether they mean the direct manager, an approver, or an admin. If a term conflicts with how the knowledge wiki uses it, say so.
+- Check against reality. When the user describes current behaviour that differs from research, point out the difference and ask which should be true.
 
-If a technical concern emerges:
-- capture it as a technical implication
-- do not force resolution immediately
-- continue product discovery first
+# Write the Shape
 
-Translate technical concerns into behavioral language whenever possible.
+Write `exploration.md` only after the user confirms a direction. Before writing, restate the chosen direction in two or three sentences and ask "Shall I write this up?" Do not write on your own initiative mid-brainstorm; use `weave-capture session exploration` for checkpoints instead.
 
-Example:
-Instead of asking:
-> "Should this be eventually consistent?"
+Use the structure in `shape-template.md` (sibling to this `SKILL.md`, at `<agent-skills-dir>/weave-explore/shape-template.md` after install). If the user has modified the template, follow their version. If `exploration.md` already exists, merge into its sections and keep its frontmatter; older files may use `Current Understanding` instead of `Problem` and `Chosen Direction`, so fold that content in rather than dropping it.
 
-Ask:
-> "Is it acceptable if users see updates a few seconds later?"
+- Keep every option that was seriously discussed under **Options Considered**, with why it was chosen or rejected. Later readers will ask "why didn't we do X?".
+- Write **Existing Behavior** in product terms only.
+- Put decisions with their reasons under **Decisions**, and anything not yet confirmed under **Assumptions** or **Open Questions**.
+- Do not paste the conversation. The shape is the conclusion, not the transcript.
 
----
+Set **PRD Readiness**:
 
-# Sub-Repo Product Discovery
+- `Ready` when there is a chosen direction, its main workflows and scenarios are clear, and no open question is marked as blocking the PRD.
+- Otherwise `Not ready — <what is missing>`.
 
-In workspace mode, use registered repos to understand existing product behavior across the workspace.
+Then record progress, citing what informed the shape:
 
-For relevant repos, prioritize reading:
-
-```text
-wiki/knowledge/**
-wiki/changes/**
-README.md
-CONTEXT.md
-CONTEXT-MAP.md
-docs/**
-docs/adr/**
-adr/**
-specs/**
-tests/**
+```bash
+weave change progress exploration --source discussion --json
 ```
 
-Use sub-repo context to discover:
+Add `--source research` when `research.md` informed the shape, and `--source sessions` when earlier session notes did.
 
-- domain language and user-facing terminology
-- actors, roles, permissions, and ownership boundaries
-- existing workflows and lifecycle states
-- configuration or rollout behavior that changes user experience
-- failure states, edge cases, and operational expectations
-- prior changes or specs that constrain the current exploration
+# Lifecycle Staleness Verification
 
-Read implementation code only as needed to verify current behavior, locate hidden assumptions, or resolve contradictions between docs and reality.
+Before calling `weave change progress`, verify content-sync of every artifact
+that would otherwise be marked stale by the default pessimistic propagation.
 
-Translate technical findings into product behavior questions. Do not ask the user to choose implementation details unless the choice materially changes user behavior, compliance, visibility, permissions, rollout, or operational guarantees.
+The `--source` arguments of `weave change progress` declare causal influence,
+not strict-DAG dependency. Pessimistic staleness propagation is the safe default,
+not the only correct answer. When the clarification this skill just performed is
+narrowly contained (a typo fix, a sentence rewording, an open-question
+resolution), dependents may already be in content sync; flagging them stale
+creates churn the user did not ask for.
 
----
+Procedure:
 
-# Scenario-Driven Discovery
+1. Identify the set of structural dependents of the lane being progressed. Read
+   `wiki/changes/<change-id>/status.yml` and compute which lanes list this
+   lane in their `artifacts.<lane>.sources`.
+2. For each dependent lane, read both the dependent artifact and the artifact
+   just being progressed. Decide whether the change you just made invalidates
+   the dependent's content. The judgement is binary per lane: invalidates, or
+   does not invalidate.
+3. Select the appropriate progress invocation:
 
-Prefer concrete scenarios over abstractions.
+   - Every dependent is invalidated (or there are no dependents):
+     `weave change progress <lane> --source <list> --json` (default, no new flags)
+   - No dependent is invalidated:
+     `weave change progress <lane> --source <list> --no-invalidate --json`
+   - Some dependents are invalidated, some are not:
+     `weave change progress <lane> --source <list> --invalidate=<comma-list> --json`
 
-Instead of:
-> "Can approvals be revoked?"
+4. If a previously-stale dependent is now in content sync (because the upstream
+   change has been absorbed but the stale flag still lingers from an earlier
+   pessimistic propagation), clear it explicitly:
 
-Ask:
-> "Suppose compensation is finalized and a manager reopens the review afterward - what should happen?"
+   `weave change clear-stale <lane> --reason "<one-sentence verification>" --json`
 
-Use scenarios to:
-- expose hidden assumptions
-- clarify ownership
-- test lifecycle boundaries
-- uncover operational risks
-- reveal conflicting expectations
+   Always pass `--reason` so the audit entry in `stale_history` carries the
+   verification rationale. Do not clear flags without reading both artifacts.
 
----
+5. Never edit `status.yml` by hand to manipulate stale state. Use the CLI.
 
-# Domain Awareness
+Failure mode: if you are uncertain whether a dependent is in content sync,
+prefer the pessimistic default (omit `--no-invalidate` and `--invalidate`).
+The user can always run `weave-clarify <lane>` later. A false-positive stale
+flag is recoverable; silently leaving a real downstream artifact mismatched is
+not.
 
-During codebase exploration, also look for existing documentation. Prefer Weave knowledge when present, and use existing repo documentation as additional context.
+# Final Response
 
-## File structure
-
-Most repos have a single context:
+After writing the shape, reply with exactly this shape and nothing else:
 
 ```text
-/
-|-- CONTEXT.md
-|-- docs/
-|   `-- adr/
-`-- src/
+Product shape written to wiki/changes/<change-id>/exploration.md.
+
+Chosen direction: <one sentence>
+Options considered: <N>
+PRD readiness: <Ready | Not ready — reason>
+
+Next step: <see below>
 ```
 
-Some repos have multiple contexts:
+Choose the next step:
 
-```text
-/
-|-- CONTEXT-MAP.md
-|-- docs/
-|   `-- adr/
-`-- src/
-    |-- ordering/
-    |   |-- CONTEXT.md
-    |   `-- docs/adr/
-    `-- billing/
-        |-- CONTEXT.md
-        `-- docs/adr/
-```
-
-Use existing documentation to:
-- align terminology
-- avoid duplicate concepts
-- detect conflicting meanings
-- understand established workflows
-- reconcile Weave knowledge with repo-local docs when they conflict
-
----
-
-# PM-Safe Code Exploration
-
-Code inspection is allowed when needed to verify current product behavior.
-
-However, do not show code snippets, function internals, database schemas, API details, or infrastructure details unless the user explicitly asks.
-
-Translate technical findings into product language.
-
-Good:
-> "Today, the system appears to finalize the whole review at once. It does not currently support partial approvals."
-
-Avoid unless asked:
-> "The `finalizeReview()` function calls `updateMany()` on all review items."
-
-If technical uncertainty matters, surface it as a product-relevant implication:
-> "There may be technical coupling here, but the product question is whether partial approval should exist at all."
-
-Keep technical implications separate from product decisions.
-
----
-
-# Glossary Discipline
-
-Challenge terminology aggressively.
-
-If the user uses a term that conflicts with the existing language, call it out immediately.
-
-Example:
-> "Your glossary defines 'submission' differently from how you're using it here - which meaning should we standardize on?"
-
-Sharpen vague language.
-
-Replace overloaded terms with precise domain concepts.
-
-Example:
-> "When you say 'manager', do you mean the direct manager, calibration owner, or workflow approver?"
-
-Do not allow ambiguous terminology to survive.
-
----
-
-# Cross-Reference With Reality
-
-When the user describes behavior:
-- verify whether the existing system already behaves differently
-- inspect workflows if necessary
-- surface contradictions explicitly
-
-Example:
-> "You mentioned partial approvals are allowed, but the current workflow finalizes the entire review together. Which behavior should be authoritative?"
-
-Treat the current product behavior as an important input - but not necessarily the correct future behavior.
+- `Not ready` → say what is missing and offer to keep exploring.
+- `Ready` on a `feat` change → `weave-stress-test exploration`, ideally in a fresh session so the critique is independent of this brainstorm.
+- `Ready` on any other change type → `weave-prd`, or `weave-stress-test exploration` if the user wants the shape challenged first.
 
 ---
 

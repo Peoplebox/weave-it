@@ -1,7 +1,11 @@
 ---
 name: weave-research
-description: Answer the active Weave change's questions.md by documenting how the current system works, using read-only research sub-agents, and write research.md. Use after weave-questions, ideally in a fresh session.
-last_changed_in: 0.1.13
+description: Document how the system works today by answering the active Weave change's questions.md with read-only research sub-agents, and write an objective, cited research.md covering flows, contracts, tests, and code references. Use after weave-questions, ideally in a fresh session, or when the user asks to map or document the current code for a change. Describes what exists only, with no recommendations. Not for product brainstorming (use weave-explore) or technical design (use weave-architect).
+license: MIT
+compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init. Uses read-only research sub-agents when the agent supports them (installed for Claude Code by weave agent install).
+metadata:
+  author: weave-tools
+  last_changed_in: "0.1.13"
 ---
 
 # Purpose
