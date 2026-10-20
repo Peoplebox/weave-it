@@ -106,6 +106,7 @@ Read live artifacts first, then sessions:
 
 ```text
 wiki/changes/<change-id>/status.yml
+wiki/changes/<change-id>/research.md
 wiki/changes/<change-id>/exploration.md
 wiki/changes/<change-id>/prd.md
 wiki/changes/<change-id>/architecture.md
@@ -116,6 +117,8 @@ wiki/changes/<change-id>/knowledge-delta.md
 wiki/changes/<change-id>/tasks.md
 .weave/architecture-considerations.md
 ```
+
+When `research.md` exists, treat it as the baseline for how the system works today and build on it instead of re-researching the same areas. Re-check its claims in code only where a design decision depends on them, and point out anything that no longer matches.
 
 Architecture shape rules:
 

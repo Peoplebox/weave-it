@@ -138,6 +138,18 @@ If no useful prior exploration content or session notes exist, start normal expl
 
 ---
 
+# Current-State Research
+
+`weave-explore` is product discovery. Facts about how the system works today belong in `wiki/changes/<change-id>/research.md`, written by `weave-research` from `questions.md`.
+
+- If `research.md` exists, read it before asking discovery questions and treat it as the current-state baseline. Use it to ground scenarios, call out contradictions, and avoid asking the user things the research already answers.
+- Do not repeat research that `research.md` already covers. Inspect code yourself only to confirm a specific behaviour the conversation depends on, or to fill a small gap.
+- If `research.md` is missing and the change touches existing behaviour, say once that `weave-questions` then `weave-research` (in a fresh session) would give exploration a factual baseline, then continue if the user wants to proceed without it.
+- If you find that `research.md` is wrong or out of date, say so and suggest re-running `weave-research`; do not edit it from this skill.
+- When `research.md` informed the exploration, the capture that persists it should record `--source research` alongside `--source discussion`.
+
+---
+
 # Purpose
 
 This skill helps refine product requirements by interrogating workflows, domain language, permissions, lifecycle behavior, operational expectations, and edge cases.
@@ -206,7 +218,7 @@ Do not jump into technical implementation prematurely.
 
 # Technical Boundary
 
-You may inspect the codebase to:
+Prefer `research.md` for current-state facts. Beyond that, you may inspect the codebase to:
 - understand existing workflows
 - identify terminology
 - discover current constraints

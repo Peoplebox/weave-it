@@ -229,6 +229,7 @@ Do not add transcript-style discussion to the live artifact.
 weave change progress exploration --source discussion --json
 weave change progress prd --source exploration --source sessions --json
 weave change progress architecture --source prd --source codebase --json
+weave change progress architecture --source prd --source research --source codebase --json
 ```
 
 Run only the command matching the selected artifact and pass only sources that actually informed the live artifact. If lifecycle progress fails, do not rewrite the session note or live artifact just to recover. Report the progress failure in the completion response.

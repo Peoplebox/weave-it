@@ -1,10 +1,10 @@
 import YAML from "yaml";
 
-export type ArtifactName = "exploration" | "prd" | "architecture";
+export type ArtifactName = "questions" | "research" | "exploration" | "prd" | "architecture";
 export type ArtifactStatus = "draft" | "reviewed" | "approved";
 export type ArtifactOwner = "product" | "engineering";
 
-export const artifactNames: ArtifactName[] = ["exploration", "prd", "architecture"];
+export const artifactNames: ArtifactName[] = ["questions", "research", "exploration", "prd", "architecture"];
 
 export interface ArtifactFrontmatterOptions {
   artifact: ArtifactName;
@@ -23,12 +23,16 @@ export function artifactFileName(artifact: ArtifactName): string {
 }
 
 export function defaultArtifactOwner(artifact: ArtifactName): ArtifactOwner {
-  return artifact === "architecture" ? "engineering" : "product";
+  return artifact === "exploration" || artifact === "prd" ? "product" : "engineering";
 }
 
 export function defaultArtifactSource(artifact: ArtifactName): string {
-  if (artifact === "exploration") {
+  if (artifact === "questions" || artifact === "exploration") {
     return "discussion";
+  }
+
+  if (artifact === "research") {
+    return "questions.md";
   }
 
   return artifact === "prd" ? "exploration.md" : "prd.md";

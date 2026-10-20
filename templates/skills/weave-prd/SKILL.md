@@ -141,6 +141,7 @@ Read when present:
 
 ```text
 wiki/changes/<change-id>/status.yml
+wiki/changes/<change-id>/research.md
 wiki/changes/<change-id>/decisions.md
 wiki/changes/<change-id>/contracts.md
 wiki/changes/<change-id>/handoff.md
@@ -283,11 +284,12 @@ After successfully writing or revising `prd.md`, run:
 weave change progress prd --source exploration --source sessions --json
 ```
 
-Pass only sources that actually informed the PRD. Examples:
+Pass only sources that actually informed the PRD. Add `--source research` when `research.md` shaped the requirements. Examples:
 
 ```bash
 weave change progress prd --source discussion --json
 weave change progress prd --source exploration --source sessions --json
+weave change progress prd --source exploration --source research --json
 ```
 
 If lifecycle progress fails, do not rewrite `prd.md` just to recover. Report the progress failure in the completion response so the user can rerun the command or inspect `status.yml`.

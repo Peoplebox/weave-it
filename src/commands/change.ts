@@ -137,7 +137,7 @@ export function changeCommand(): Command {
     .command("progress")
     .description("Record lifecycle progress for the active change.")
     .argument("<lane>", "lane: exploration, prd, findings, architecture, or slices", parseChangeStage)
-    .option("--source <source>", "source dependency: exploration, prd, architecture, discussion, sessions, or codebase", collectValues, [])
+    .option("--source <source>", "source dependency: questions, research, exploration, prd, architecture, discussion, sessions, or codebase", collectValues, [])
     .option("--no-invalidate", "suppress all downstream stale propagation")
     .option(
       "--invalidate <lanes>",

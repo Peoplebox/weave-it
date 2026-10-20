@@ -395,6 +395,7 @@ After successfully writing the selected artifact, run the matching lifecycle com
 weave change progress exploration --source discussion --json
 weave change progress prd --source exploration --source sessions --json
 weave change progress architecture --source prd --source codebase --json
+weave change progress architecture --source prd --source research --source codebase --json
 ```
 
 Run only the command matching the selected target artifact and pass only sources that actually informed the clarified artifact. If lifecycle progress fails, do not rewrite the clarified artifact just to recover. Report the progress failure in the completion response.

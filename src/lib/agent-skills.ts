@@ -8,13 +8,21 @@ import { ensureDir, pathExists, writeFileAtomic } from "./files.js";
 
 export type AgentName = "codex" | "cursor" | "claude" | "opencode";
 export type AgentSelection = AgentName | "all";
-export type ManagedArtifactKind = "skill" | "command" | "resource";
+export type ManagedArtifactKind = "skill" | "command" | "resource" | "agent";
 export type SkillOperationStatus = "installed" | "unchanged" | "modified" | "updated" | "reset" | "missing";
 
 export interface DefaultSkill {
   name: string;
   description: string;
   lastChangedIn: string;
+  sourcePath: string;
+  content: string;
+  hash: string;
+}
+
+export interface DefaultSubagent {
+  name: string;
+  description: string;
   sourcePath: string;
   content: string;
   hash: string;
@@ -54,6 +62,7 @@ interface AgentSkillOptions {
   agent: AgentSelection;
   templatesDir?: string;
   commandTemplatesDir?: string;
+  subagentTemplatesDir?: string;
   now?: Date;
 }
 
@@ -77,6 +86,7 @@ export interface AgentManifestEntries {
   skills?: Record<string, ManifestEntry>;
   commands?: Record<string, ManifestEntry>;
   resources?: Record<string, ManifestEntry>;
+  agents?: Record<string, ManifestEntry>;
 }
 
 export interface AgentsManifest {
@@ -88,6 +98,7 @@ interface ConcreteTarget {
   agent: AgentName;
   skillsDir: string;
   commandsDir?: string;
+  subagentsDir?: string;
 }
 
 interface ManagedArtifact {
@@ -223,11 +234,14 @@ export async function diffAgentSkills(options: DiffAgentSkillOptions): Promise<{
 
 async function defaultArtifactsForTarget(
   target: ConcreteTarget,
-  options: Pick<AgentSkillOptions, "templatesDir" | "commandTemplatesDir">,
+  options: Pick<AgentSkillOptions, "templatesDir" | "commandTemplatesDir" | "subagentTemplatesDir">,
   onlyName?: string,
 ): Promise<ManagedArtifact[]> {
+  const onlySubagent = onlyName ? await maybeReadDefaultSubagent(onlyName, options) : undefined;
   const skills = onlyName
-    ? [await readDefaultSkill(onlyName, { templatesDir: options.templatesDir })]
+    ? onlySubagent
+      ? []
+      : [await readDefaultSkill(onlyName, { templatesDir: options.templatesDir })]
     : await listDefaultSkills({ templatesDir: options.templatesDir });
   const artifacts: ManagedArtifact[] = [];
 
@@ -271,7 +285,83 @@ async function defaultArtifactsForTarget(
     }
   }
 
+  if (target.subagentsDir) {
+    const subagents = onlyName
+      ? onlySubagent
+        ? [onlySubagent]
+        : []
+      : await listDefaultSubagents({ subagentTemplatesDir: options.subagentTemplatesDir });
+
+    for (const subagent of subagents) {
+      artifacts.push({
+        kind: "agent",
+        name: subagent.name,
+        content: subagent.content,
+        hash: subagent.hash,
+        lastChangedIn: null,
+        destination: installedSubagentPath(target.subagentsDir, subagent.name),
+      });
+    }
+  }
+
   return artifacts;
+}
+
+export async function listDefaultSubagents(
+  options: { subagentTemplatesDir?: string } = {},
+): Promise<DefaultSubagent[]> {
+  const subagentTemplatesDir = options.subagentTemplatesDir ?? (await findDefaultSubagentsDir());
+  const entries = await readdir(subagentTemplatesDir, { withFileTypes: true }).catch((error: unknown) => {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  });
+  const subagents = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && extname(entry.name) === ".md")
+      .map((entry) => readDefaultSubagent(basename(entry.name, ".md"), { subagentTemplatesDir })),
+  );
+
+  return subagents.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function readDefaultSubagent(
+  name: string,
+  options: { subagentTemplatesDir?: string } = {},
+): Promise<DefaultSubagent> {
+  validateSkillName(name);
+
+  const subagentTemplatesDir = options.subagentTemplatesDir ?? (await findDefaultSubagentsDir());
+  const sourcePath = join(subagentTemplatesDir, `${name}.md`);
+  const content = await readFile(sourcePath, "utf8");
+  const metadata = parseSubagentFrontmatter(content, sourcePath);
+
+  if (metadata.name !== name) {
+    throw new Error(`Subagent frontmatter name mismatch in ${sourcePath}: expected ${name}, got ${metadata.name}`);
+  }
+
+  return {
+    name: metadata.name,
+    description: metadata.description,
+    sourcePath,
+    content,
+    hash: hashContent(content),
+  };
+}
+
+async function maybeReadDefaultSubagent(
+  name: string,
+  options: { subagentTemplatesDir?: string } = {},
+): Promise<DefaultSubagent | undefined> {
+  return readDefaultSubagent(name, options).catch((error: unknown) => {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+
+    throw error;
+  });
 }
 
 async function listDefaultSkillResources(skill: DefaultSkill): Promise<DefaultSkillResource[]> {
@@ -481,14 +571,14 @@ function resolveAgentTargets(cwd: string, agent: AgentSelection): ConcreteTarget
     case "cursor":
       return [{ agent, skillsDir: join(cwd, ".agents", "skills") }];
     case "claude":
-      return [{ agent, skillsDir: join(cwd, ".claude", "skills") }];
+      return [{ agent, skillsDir: join(cwd, ".claude", "skills"), subagentsDir: join(cwd, ".claude", "agents") }];
     case "opencode":
       return [{ agent, skillsDir: join(cwd, ".agents", "skills"), commandsDir: join(cwd, ".opencode", "commands") }];
     case "all":
       return [
         { agent: "codex", skillsDir: join(cwd, ".agents", "skills") },
         { agent: "cursor", skillsDir: join(cwd, ".agents", "skills") },
-        { agent: "claude", skillsDir: join(cwd, ".claude", "skills") },
+        { agent: "claude", skillsDir: join(cwd, ".claude", "skills"), subagentsDir: join(cwd, ".claude", "agents") },
         { agent: "opencode", skillsDir: join(cwd, ".agents", "skills"), commandsDir: join(cwd, ".opencode", "commands") },
       ];
     default:
@@ -502,6 +592,10 @@ function installedSkillPath(skillsDir: string, skillName: string): string {
 
 function installedSkillResourcePath(skillsDir: string, skillName: string, resourceName: string): string {
   return join(skillsDir, skillName, resourceName);
+}
+
+function installedSubagentPath(subagentsDir: string, subagentName: string): string {
+  return join(subagentsDir, `${subagentName}.md`);
 }
 
 function installedOpencodeCommandPath(commandsDir: string, commandName: string): string {
@@ -521,7 +615,7 @@ export async function loadAgentsManifest(cwd: string): Promise<AgentsManifest> {
   for (const agent of Object.keys(installed) as AgentName[]) {
     const buckets = installed[agent];
     if (!buckets) continue;
-    for (const bucket of ["skills", "commands", "resources"] as const) {
+    for (const bucket of ["skills", "commands", "resources", "agents"] as const) {
       const entries = buckets[bucket];
       if (!entries) continue;
       for (const name of Object.keys(entries)) {
@@ -579,6 +673,20 @@ function parseSkillFrontmatter(
   };
 }
 
+function parseSubagentFrontmatter(content: string, sourcePath: string): { name: string; description: string } {
+  const match = /^---\n([\s\S]*?)\n---/.exec(content);
+  if (!match) {
+    throw new Error(`Missing frontmatter in ${sourcePath}`);
+  }
+
+  const metadata = YAML.parse(match[1]) as Partial<{ name: string; description: string }>;
+  if (!metadata.name || !metadata.description) {
+    throw new Error(`Subagent frontmatter in ${sourcePath} must include name and description`);
+  }
+
+  return { name: metadata.name, description: metadata.description };
+}
+
 function formatFullFileDiff(installedPath: string, defaultName: string, installed: string, currentDefault: string): string {
   if (installed === currentDefault) {
     return `No differences for ${installedPath}`;
@@ -625,6 +733,10 @@ async function findDefaultSkillsDir(): Promise<string> {
   return join(await findTemplatesRoot(), "skills");
 }
 
+async function findDefaultSubagentsDir(): Promise<string> {
+  return join(await findTemplatesRoot(), "agents");
+}
+
 async function findDefaultOpencodeCommandsDir(): Promise<string> {
   return join(await findTemplatesRoot(), "opencode", "commands");
 }
@@ -660,7 +772,7 @@ function validateSkillResourceName(name: string): void {
   }
 }
 
-function manifestBucketForKind(kind: ManagedArtifactKind): "skills" | "commands" | "resources" {
+function manifestBucketForKind(kind: ManagedArtifactKind): "skills" | "commands" | "resources" | "agents" {
   switch (kind) {
     case "skill":
       return "skills";
@@ -668,6 +780,8 @@ function manifestBucketForKind(kind: ManagedArtifactKind): "skills" | "commands"
       return "commands";
     case "resource":
       return "resources";
+    case "agent":
+      return "agents";
     default:
       throw new Error(`Unsupported artifact kind: ${kind satisfies never}`);
   }

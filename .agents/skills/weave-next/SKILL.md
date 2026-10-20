@@ -57,6 +57,8 @@ For the active change, read live artifacts first:
 
 ```text
 wiki/changes/<change-id>/status.yml
+wiki/changes/<change-id>/questions.md
+wiki/changes/<change-id>/research.md
 wiki/changes/<change-id>/exploration.md
 wiki/changes/<change-id>/prd.md
 wiki/changes/<change-id>/architecture.md
@@ -114,6 +116,8 @@ Do not treat an empty or scaffold-only `tasks.md` as issue breakdown evidence.
 Source-aware stale-first recommendation:
 
 - If `status.yml.stale` contains one or more lanes, recommend refreshing stale lanes before forward progress.
+- stale `questions` -> run `weave-questions`
+- stale `research` -> run `weave-research`
 - stale `prd` -> run `weave-prd`
 - stale `architecture` -> run `weave-architect`
 - stale `slices` -> run `weave-slices`
@@ -126,6 +130,12 @@ Knowledge freshness recommendation:
 - If `status.yml.knowledge.status` is `stale`, recommend `weave-knowledge` after the invalidating upstream context is resolved.
 - If knowledge was previously `updated` or `none` and artifact stale lanes exist afterward, report knowledge as effectively stale without writing `status.yml`.
 - Explain that `weave-next` is read-only and does not mutate knowledge status.
+
+Research lane recommendation (the `questions` and `research` lanes are optional current-state evidence and never move `stage`):
+
+- usable `questions.md` plus missing or scaffold-only `research.md` -> run `weave-research`, in a fresh session
+- missing `questions.md` and `research.md` on a change that touches existing behaviour, with exploration, PRD, or architecture not yet usable -> show `weave-questions` as the `Alternate Pipeline Step`; do not make it primary over a valid resume point
+- `research.md` with open questions -> mention them in `Reason`; do not block forward progress on them
 
 Type-aware forward recommendation:
 
@@ -165,7 +175,7 @@ Omit empty sections when they would add noise.
 
 In `Current Change`, include change id, title when available, target repo or repos, and branch health.
 
-In `Artifact State`, summarize `exploration.md`, `prd.md`, `architecture.md`, and issue/task evidence.
+In `Artifact State`, summarize `questions.md` and `research.md` when present, then `exploration.md`, `prd.md`, `architecture.md`, and issue/task evidence.
 
 In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present.
 

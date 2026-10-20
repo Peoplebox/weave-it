@@ -30,13 +30,26 @@ export type StaleChangeLanes = Partial<Record<ChangeStage, StaleChangeLaneMetada
 export type ChangeArtifactsMetadata = Partial<Record<ChangeStage, ChangeArtifactMetadata>>;
 
 export const changeTypes: ChangeType[] = ["feat", "fix", "refactor", "docs", "test", "ci", "chore"];
-export const changeStages = ["exploration", "prd", "findings", "architecture", "slices"] as const;
+export const changeStages = ["questions", "research", "exploration", "prd", "findings", "architecture", "slices"] as const;
 export const legacyChangeStageAliases: Record<string, ChangeStage> = { issues: "slices" };
+// `questions` and `research` are current-state evidence lanes. They take part in
+// artifact metadata and stale propagation like any other lane, but progressing them
+// never moves the change's `stage`, which tracks the furthest product/engineering lane.
+export const evidenceStages = ["questions", "research"] as const satisfies readonly ChangeStage[];
 // `started` is a stored stage but NOT an artifact lane: non-feature changes begin at
 // `started` before any durable artifact lane has been reached. It never appears in
-// `changeStages`, so staleness/dependency logic operates only on the four real lanes.
+// `changeStages`, so staleness/dependency logic operates only on the real lanes.
 export const storedStages = ["started", ...changeStages] as const;
-export const artifactSourceIds = ["exploration", "prd", "architecture", "discussion", "sessions", "codebase"] as const;
+export const artifactSourceIds = [
+  "questions",
+  "research",
+  "exploration",
+  "prd",
+  "architecture",
+  "discussion",
+  "sessions",
+  "codebase",
+] as const;
 export const knowledgeStatuses = ["pending", "stale", "updated", "none"] as const;
 
 export interface StaleChangeLaneMetadata {
@@ -485,7 +498,7 @@ export async function progressChange(options: ProgressChangeOptions): Promise<Pr
   const existing = await readChangeMetadata(context.change.changePath, context.change.id);
   const sourceResolution = await resolveProgressSources(options, context.change.changePath);
 
-  const nextStage = maxStage([existing.stage, options.stage]);
+  const nextStage = isEvidenceStage(options.stage) ? existing.stage : maxStage([existing.stage, options.stage]);
   const artifacts: ChangeArtifactsMetadata = {
     ...existing.artifacts,
     [options.stage]: {
@@ -1035,6 +1048,10 @@ async function resolveProgressSources(
   const sources = dedupeSources(requested.map((source) => normalizeArtifactSourceId(source)));
   if (sources.length > 0) {
     return { sources };
+  }
+
+  if (options.stage === "research" && (await hasSubstantiveMarkdown(path.join(changePath, "questions.md")))) {
+    return { sources: ["questions"] };
   }
 
   if (options.stage === "findings" && (await hasSubstantiveMarkdown(path.join(changePath, "findings.md")))) {
@@ -1601,6 +1618,10 @@ function normalizeKnowledgeInvalidationSource(value: string): KnowledgeInvalidat
     `Unsupported knowledge invalidation source: ${value}. Expected ${supported.join(", ")}`,
     { source: value, supported },
   );
+}
+
+export function isEvidenceStage(stage: StoredChangeStage): boolean {
+  return (evidenceStages as readonly string[]).includes(stage);
 }
 
 function maxStage(stages: StoredChangeStage[]): ChangeStage {

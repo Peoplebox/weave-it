@@ -486,6 +486,65 @@ describe("changes", () => {
     });
   });
 
+  it("records research evidence lanes without moving the change stage", async () => {
+    const cwd = await tempDir();
+    const session = sessionPath(cwd);
+    const created = await createChange({
+      cwd,
+      title: "Research lanes",
+      type: "fix",
+      now: testNow,
+      randomId: () => "r111",
+      sessionPath: session,
+    });
+    const changePath = path.join(cwd, "wiki", "changes", created.id);
+    await writeFile(path.join(changePath, "questions.md"), "# Research Questions\n\n1. How does billing finalise invoices today?\n");
+
+    const questions = await progressChange({ cwd, stage: "questions", sources: ["discussion"], sessionPath: session, now: testNow });
+    const research = await progressChange({ cwd, stage: "research", sessionPath: session, now: testNow });
+    const status = YAML.parse(await readFile(path.join(changePath, "status.yml"), "utf8"));
+
+    expect(questions.change.stage).toBe("started");
+    expect(research.change.stage).toBe("started");
+    expect(research.sources).toEqual(["questions"]);
+    expect(status).toMatchObject({
+      stage: "started",
+      artifacts: {
+        questions: { sources: ["discussion"] },
+        research: { sources: ["questions"] },
+      },
+    });
+  });
+
+  it("keeps the furthest product lane as stage when research is refreshed later", async () => {
+    const cwd = await tempDir();
+    const session = sessionPath(cwd);
+    await createChange({ cwd, title: "Research refresh", now: testNow, randomId: () => "r222", sessionPath: session });
+
+    await progressChange({ cwd, stage: "prd", sources: ["exploration"], sessionPath: session, now: testNow });
+    const research = await progressChange({ cwd, stage: "research", sources: ["questions", "codebase"], sessionPath: session, now: testNow });
+
+    expect(research.change.stage).toBe("prd");
+  });
+
+  it("propagates staleness from questions through research to lanes that cite research", async () => {
+    const cwd = await tempDir();
+    const session = sessionPath(cwd);
+    await createChange({ cwd, title: "Research staleness", now: testNow, randomId: () => "r333", sessionPath: session });
+
+    await progressChange({ cwd, stage: "questions", sources: ["discussion"], sessionPath: session, now: testNow });
+    await progressChange({ cwd, stage: "research", sources: ["questions", "codebase"], sessionPath: session, now: testNow });
+    await progressChange({ cwd, stage: "prd", sources: ["exploration", "research"], sessionPath: session, now: testNow });
+    await progressChange({ cwd, stage: "architecture", sources: ["prd", "codebase"], sessionPath: session, now: testNow });
+
+    const later = new Date(2026, 4, 22, 11, 0, 0);
+    const result = await progressChange({ cwd, stage: "questions", sources: ["discussion"], sessionPath: session, now: later });
+
+    expect(Object.keys(result.change.stale).sort()).toEqual(["architecture", "prd", "research"]);
+    expect(result.change.stale.research).toMatchObject({ invalidated_by: "questions" });
+    expect(result.change.stage).toBe("architecture");
+  });
+
   it("records source-aware progress metadata without upstream inference", async () => {
     const cwd = await tempDir();
     const session = sessionPath(cwd);
