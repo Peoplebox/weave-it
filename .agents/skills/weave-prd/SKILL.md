@@ -1,6 +1,6 @@
 ---
 name: weave-prd
-description: Write or revise prd.md for the active Weave change from the agreed product shape in exploration.md, research.md, session notes, and the discussion. Use when the product direction is decided and the user wants a PRD, product requirements, acceptance criteria, or to update requirements after feedback. Asks only the questions that block the PRD. Not for comparing product options (use weave-explore) or technical design (use weave-architect).
+description: Write or revise prd.md for the active Weave change by writing up the agreed, stress-tested product shape in exploration.md, using research.md and session notes for detail. Use when the product direction is decided and the user wants a PRD, product requirements, acceptance criteria, or to update requirements after feedback. For feat changes it first checks for a passing stress test, and it asks only the questions that block the PRD. Not for comparing product options (use weave-explore) or technical design (use weave-architect).
 license: MIT
 compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
 metadata:
@@ -10,17 +10,17 @@ metadata:
 
 # Weave PRD
 
-This skill converts available Weave product context into a product requirements document.
+This skill writes up product decisions that have already been made. The product thinking happens earlier: `weave-explore` compares directions and writes the product shape to `exploration.md`, and `weave-stress-test` challenges that shape and writes the answers back into it. `weave-prd` turns the shape into a requirements document that stands alone, asking only the questions that block it.
 
-Use `exploration.md` when it exists and is useful, but do not require it. If product context is missing or insufficient, interview the user until the PRD can stand alone. Ask the user when a missing answer would materially change product scope, user behavior, permissions, rollout, or acceptance.
+For `feat` changes the shape must have passed a stress test first (see **Stress Test Gate**). For other change types `exploration.md` is useful but not required; when product context is thin, ask focused questions until the PRD can stand alone.
 
 ---
 
 # Operating Principles
 
-- Treat `exploration.md` as a preferred source when it exists and is useful.
-- Do not require `exploration.md` before generating or revising `prd.md`.
-- Use current discussion, PRD session notes, knowledge context, and focused product interview questions when exploration context is missing or insufficient.
+- Treat the product shape in `exploration.md` as the source of decisions. Write it up; do not redo it.
+- Do not reopen decisions the shape or the stress test already settled. If the user wants to change one, that is a shape change (see **When the Shape Needs to Change**).
+- For non-`feat` changes, do not require `exploration.md` before generating or revising `prd.md`; use current discussion, PRD session notes, knowledge context, and focused product questions instead.
 - Treat `weave-prd` as entering or resuming the PRD lane for the active change.
 - Treat `prd.md` as a living product artifact.
 - Create `prd.md` when it does not exist.
@@ -78,6 +78,30 @@ In workspace mode there is one change context: the workspace root. In repo mode,
 
 ---
 
+# Stress Test Gate
+
+Read `type` and `stress_tests.exploration` from `weave change status --json`.
+
+For `feat` changes, continue only when the exploration verdict is `holds`, `holds-with-changes`, or `waived`, and is not `outdated`. Otherwise stop before writing anything and reply with the matching message:
+
+| Situation | Reply |
+| --- | --- |
+| no exploration verdict | `The product shape hasn't been stress-tested yet. Run weave-stress-test exploration (ideally in a fresh session), then run weave-prd again. To skip it, tell me why and I'll record a waiver.` |
+| verdict is `outdated` | `exploration.md changed after its stress test (<verdict> on <judged_at>). Run weave-stress-test exploration again so the PRD builds on a checked shape.` |
+| verdict is `needs-reshaping` | `The last stress test found the product direction doesn't hold. Return to weave-explore, starting from the session note at <stress_tests.exploration.session>.` |
+
+If the user explicitly asks to skip the stress test and gives a reason, record it, then continue:
+
+```bash
+weave change verdict exploration waived --reason "<the user's reason>" --json
+```
+
+Never record a waiver the user did not ask for.
+
+For other change types there is no gate. If an exploration verdict of `needs-reshaping` exists, mention it before continuing.
+
+---
+
 # Required Read Order
 
 For each relevant change folder, read files in this order.
@@ -90,7 +114,7 @@ Read when present:
 wiki/changes/<change-id>/exploration.md
 ```
 
-When `exploration.md` follows the product shape, build the PRD from its `Chosen Direction`, `Scenarios`, `Decisions`, and `Assumptions`, and keep `Options Considered` as background rather than requirements.
+When the exploration verdict names a stress test session note (`stress_tests.exploration.session`), read it too. Its answers are already merged into `exploration.md`; use the note for the reasoning behind them and for items marked out of scope.
 
 Treat `exploration.md` as thin context when it is:
 
@@ -99,7 +123,7 @@ Treat `exploration.md` as thin context when it is:
 - scaffold-only with headings but no substantive content
 - explicitly marked `PRD Readiness` as `Not ready`
 
-Do not stop solely because exploration is thin or missing. Use same-lane session notes, current discussion, knowledge context, and product interview questions until `prd.md` can stand alone. Do not write `exploration.md` from this skill.
+For `feat` changes the gate above means the shape is substantive. For other change types, do not stop solely because exploration is thin or missing: use same-lane session notes, current discussion, knowledge context, and focused product questions until `prd.md` can stand alone. Do not write `exploration.md` from this skill.
 
 ## 2. Current PRD Baseline
 
@@ -149,42 +173,15 @@ Read when present:
 wiki/changes/<change-id>/status.yml
 wiki/changes/<change-id>/research.md
 wiki/changes/<change-id>/decisions.md
-wiki/changes/<change-id>/contracts.md
-wiki/changes/<change-id>/handoff.md
-wiki/changes/<change-id>/implementation.md
-wiki/changes/<change-id>/tasks.md
 ```
 
-Use these as supporting context. If artifacts conflict, prefer the latest explicit product decision from `exploration.md` or `decisions.md`. Record important conflicts in `Assumptions`, `Open Questions`, or `Revision History`.
+Use these as supporting context. `research.md` describes today's system in technical terms; translate anything you use from it into product behaviour. If artifacts conflict, prefer the latest explicit product decision from `exploration.md` or `decisions.md`. Record important conflicts in `Assumptions`, `Open Questions`, or `Revision History`.
 
-## 5. Knowledge Context
+Do not read `architecture/`, `tasks.md`, `implementation.md`, or other downstream artifacts. The PRD comes before them, and reading them pulls requirements toward an implementation.
 
-Read Weave knowledge files when present:
+## 5. Knowledge and Repo Docs
 
-```text
-wiki/knowledge/index.md
-wiki/knowledge/README.md
-wiki/knowledge/domains/**/index.md
-wiki/knowledge/domains/**/features/**/behavior.md
-wiki/knowledge/domains/**/domain-wide/**
-wiki/knowledge/shared/**/behavior.md
-wiki/knowledge/**/source-map.md
-```
-
-Load only knowledge domains that appear relevant to the change. Use knowledge to align terminology, workflows, permissions, and existing product behavior.
-
-## 6. Repo Documentation
-
-If Weave knowledge is thin or missing, inspect existing repo documentation for product context:
-
-```text
-CONTEXT.md
-CONTEXT-MAP.md
-docs/
-docs/adr/
-```
-
-Use repo documentation only to clarify domain behavior and terminology.
+Read only the parts of `wiki/knowledge/` that relate to the change (`index.md`, `README.md`, and the relevant `domains/**` and `shared/**` behaviour files) to align terminology, workflows, permissions, and existing behaviour. If knowledge is thin, use `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/`, and `docs/adr/` for domain terms only.
 
 ---
 
@@ -244,15 +241,51 @@ Add a dated `Revision History` entry summarizing the update. Keep entries concis
 
 ---
 
+# Ask Only Blocking Questions
+
+Before writing, list what the PRD needs that the shape does not answer. Typical gaps are acceptance details, precise permission rules, rollout specifics, and success metrics.
+
+- If a reasonable answer is safe, do not ask. Write it as an assumption.
+- Ask only when a gap would materially change scope, user behaviour, permissions, rollout, or acceptance. Ask one question at a time, with your suggested answer, and stop after about five; anything left becomes an open question.
+- Never re-ask something the shape or the stress test decided.
+
+## When the Shape Needs to Change
+
+If an answer, or the user, changes a decision recorded in `exploration.md` (the chosen direction, a decision, or the scope), do not quietly write the new decision into the PRD. Say:
+
+```text
+That changes a decision in the product shape. Run weave-clarify exploration to update it; the stress test will then show as outdated, so run weave-stress-test exploration again before the PRD builds on it.
+```
+
+Then stop. A PRD that disagrees with its shape makes the shape useless as a record.
+
+---
+
 # Synthesis Rules
 
-Convert the exploration into a PRD that can stand alone without the conversation history.
+Convert the shape into a PRD that can stand alone without the conversation history.
+
+Map the product shape onto the PRD template:
+
+| Shape section | PRD sections |
+| --- | --- |
+| Problem | Problem Statement |
+| Existing Behavior | Current Behavior |
+| Chosen Direction | Goals, Proposed Product Behavior |
+| Scenarios | User Workflows, User Stories, Edge Cases, Acceptance Criteria |
+| Decisions | Functional Requirements, Permissions and Access Control, States and Lifecycle, Notifications and Visibility (wherever each decision belongs) |
+| Assumptions | Assumptions |
+| Open Questions | Open Questions (blocking ones should already be resolved) |
+| Options Considered | one line per rejected option under Further Notes, as background, never as requirements |
+| out-of-scope answers from the stress test | Non-Goals or Out of Scope |
+
+Older `exploration.md` files without the shape sections (for example `Current Understanding`) still work: take decisions, scenarios, and behaviour from whatever sections they have.
 
 The PRD should be understandable by Product, Design, Engineering, QA, Customer Success, and Support.
 
 When writing:
 
-- Preserve concrete decisions from `exploration.md`.
+- Preserve concrete decisions from `exploration.md`, including those added by the stress test.
 - Preserve domain language from `wiki/knowledge/`.
 - Separate goals from non-goals.
 - Convert scenarios into user workflows, requirements, and acceptance criteria.
@@ -327,6 +360,7 @@ Revised PRD: wiki/changes/<change-id>/prd.md
 Then include:
 
 ```text
+Stress test: <exploration verdict, or "not required" for non-feat changes>
 Sources used:
 - exploration.md
 - <other artifacts read>
@@ -334,6 +368,8 @@ Sources used:
 
 Assumptions: <count>
 Open questions: <count>
+
+Next step: weave-architect
 ```
 
 If multiple relevant contexts were processed (repo mode with multiple session folders), list each created or revised PRD separately. In workspace mode, the workspace root is the single context.

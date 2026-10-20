@@ -128,8 +128,15 @@ describe("agent skills", () => {
     expect(skill.name).toBe("weave-prd");
     expect(skill.description).toContain("Write or revise prd.md");
     expect(skill.content).toContain("Treat `prd.md` as a living product artifact");
-    expect(skill.content).toContain("Do not require `exploration.md` before generating or revising `prd.md`");
-    expect(skill.content).toContain("interview the user until the PRD can stand alone");
+    expect(skill.content).toContain("do not require `exploration.md` before generating or revising `prd.md`");
+    expect(skill.content).toContain("ask focused questions until the PRD can stand alone");
+    expect(skill.content).toContain("# Stress Test Gate");
+    expect(skill.content).toContain("weave change verdict exploration waived --reason");
+    expect(skill.content).toContain("Never record a waiver the user did not ask for.");
+    expect(skill.content).toContain("# Ask Only Blocking Questions");
+    expect(skill.content).toContain("That changes a decision in the product shape. Run weave-clarify exploration");
+    expect(skill.content).toContain("| Scenarios | User Workflows, User Stories, Edge Cases, Acceptance Criteria |");
+    expect(skill.content).toContain("Do not read `architecture/`, `tasks.md`, `implementation.md`");
     expect(skill.content).toContain("scaffold-only with headings but no substantive content");
     expect(skill.content).toContain("explicitly marked `PRD Readiness` as `Not ready`");
     expect(skill.content).toContain("Do not write `exploration.md` from this skill.");
