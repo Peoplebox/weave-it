@@ -28,3 +28,4 @@ Find the weak points in a written shape while they are cheap to fix, using a cri
 ## Change History
 
 - 2026-10-20 (branch `change/questions-research-skills`): introduced the skill, the challenger sub-agent, and `weave change verdict`.
+- 2026-11-01 (branch `change/questions-research-skills`): accepts proposed decisions on a passing `architecture` verdict; `waived` accepts nothing.

@@ -41,6 +41,7 @@ It resolves the workspace and branch-derived active change with `weave workspace
 - 2026-06-07 (change `260607-vuwa-architecture-skill-update`): bundled `weave-architect` now reads `.weave/architecture-considerations.md` as user-owned advisory team architecture guidance. Installed skill copies are not automatically updated; drift is surfaced through status/doctor and resolved through explicit agent update/reset commands.
 - 2026-06-11 (change `260610-l397-removing-local-cache`): removed local artifact lane commit/verification. `weave-architect` remains read-only and recommends explicit `weave-capture architecture` for persistence.
 - 2026-10-20 (branch `change/questions-research-skills`): rewritten into options, discussion, and a written technical shape; Plan Mode Guard removed; the skill now writes the architecture artifact and progresses the lane.
+- 2026-11-01 (branch `change/questions-research-skills`): drafts lasting decisions as `proposed` ADRs and flags options that conflict with accepted ones.
 
 ## Open Questions
 

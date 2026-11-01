@@ -244,6 +244,8 @@ CONTEXT.md
 CONTEXT-MAP.md
 README.md
 docs/
+wiki/decisions/
+docs/decisions/
 docs/adr/
 adr/
 ```

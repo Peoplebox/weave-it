@@ -34,6 +34,7 @@ Fix lane chain: `findings` → optional `architecture` → `slices`.
 
 - 2026-06-09 (change `260609-rrsq-weave-slice`): introduced; `last_changed_in: 0.1.6`.
 - 2026-06-11 (change `260611-cuvh-slices-execution-default-afk`): corrected step 2 command from the non-existent `weave new --type fix` to `weave change new "<title>" --type fix`; added structural `change/<change-id>` branch check so re-invocation on an existing change branch continues that change instead of creating a duplicate; documented workspace-root authority for change creation.
+- 2026-11-01 (branch `change/questions-research-skills`): checks recorded decisions for the code a bug touches and names them in `findings.md`.
 
 ## Open Questions
 

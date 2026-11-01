@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { addCommand } from "./commands/add.js";
+import { adrCommand } from "./commands/adr.js";
 import { advanceCommand } from "./commands/advance.js";
 import { agentCommand } from "./commands/agent.js";
 import { changeCommand } from "./commands/change.js";
@@ -38,6 +39,7 @@ export function createProgram(): Command {
   program.addCommand(workspaceCommand());
   program.addCommand(changeCommand());
   program.addCommand(advanceCommand());
+  program.addCommand(adrCommand());
   program.addCommand(doctorCommand());
   program.addCommand(agentCommand());
   program.addCommand(skillsCommand());

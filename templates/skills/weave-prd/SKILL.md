@@ -181,7 +181,7 @@ Do not read `architecture/`, `tasks.md`, `implementation.md`, or other downstrea
 
 ## 5. Knowledge and Repo Docs
 
-Read only the parts of `wiki/knowledge/` that relate to the change (`index.md`, `README.md`, and the relevant `domains/**` and `shared/**` behaviour files) to align terminology, workflows, permissions, and existing behaviour. If knowledge is thin, use `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/`, and `docs/adr/` for domain terms only.
+Read only the parts of `wiki/knowledge/` that relate to the change (`index.md`, `README.md`, and the relevant `domains/**` and `shared/**` behaviour files) to align terminology, workflows, permissions, and existing behaviour. If knowledge is thin, use `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/`, and recorded decisions (`wiki/decisions/` or `docs/adr/`) for domain terms only.
 
 ---
 

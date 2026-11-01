@@ -46,6 +46,8 @@ Lanes can be skipped when a change does not need them. Cross-cutting helpers (`w
 - **knowledge** (cross-cutting) — update current-state specs under `wiki/knowledge/**` and record change-local provenance in `knowledge-delta.md`.
   - Skill: `weave-knowledge`
 
+Alongside the lanes, lasting engineering decisions are kept as ADRs in `wiki/decisions/` (see [`weave adr`](#weave-adr)). They are not a lane and add no gate. `wiki/knowledge/` says how things work, `wiki/changes/` holds the history of each change, and `wiki/decisions/` says why the system is built this way.
+
 Between a shape and the lane that builds on it sits a **stress test**:
 
 - `weave-stress-test exploration` or `weave-stress-test architecture` has the read-only `weave-challenger` sub-agent attack the written shape using only that artifact, `research.md`, and the knowledge wiki — never the brainstorm conversation. It then interviews you on the weak points, writes the answers into the shape, and records a verdict with `weave change verdict`.
@@ -617,6 +619,38 @@ Sessions are launched through an agent adapter (`--agent`, default `claude`, whi
 
 If a target is not a git repo, Weave still writes the change artifacts and reports branch creation as skipped. `switch` blocks when affected git repos have uncommitted changes; `new` does not block so already-started local work can be captured as a new change.
 
+## `weave adr`
+
+Records long-lived engineering decisions (ADRs) that outlive any one change.
+
+```bash
+weave adr new "<title>" [--applies-to <path>]... [--supersedes <decision>]... [--owner <owner>] [--slug <slug>] [--json]
+weave adr list [--status <status>] [--path <file>] [--json]
+weave adr status <decision> <proposed|accepted|superseded> [--superseded-by <decision>] [--json]
+weave adr check [--base <ref>] [--json]
+```
+
+Write one only when a future developer could reasonably undo the decision without knowing why it was made: it is costly to reverse and it affects more than one change. Most changes record none.
+
+- **Location:** `wiki/decisions/`, with a generated `index.md`. If a repo already has `docs/decisions/`, `docs/adr/`, or `adr/`, Weave uses that folder instead. ADRs written outside Weave are listed but left untouched. In workspace mode the workspace root owns decisions.
+- **Ids:** dated, such as `261101-a3f9-separate-approvals-table`, so parallel branches cannot collide. Commands accept any unique part of an id.
+- **File format:** frontmatter (`id`, `title`, `status`, `date`, `owner`, `change`, `applies_to`, `supersedes`, `superseded_by`) and short sections: Context, Decision, Alternatives Rejected, Consequences, Reconsider When.
+- **`applies_to`:** files, folders, or globs relative to the Weave root (in workspace mode, include the repo folder). `*` stays within one path segment; `**` crosses them.
+- **Status:** `proposed`, then `accepted`, then `superseded`. An accepted decision is never rewritten. Accepting a decision that names `--supersedes` retires the old one, which stays in place as history.
+
+`weave adr check` lists the live decisions that apply to files changed on this branch, including uncommitted and untracked files, across registered repos in workspace mode. It compares against the default branch or `--base`. It reports and never blocks, and it works whether or not an agent looked at the decisions.
+
+How the skills use them:
+
+- `weave-research` reports the decisions that apply to what it researched.
+- `weave-architect` works inside accepted decisions, says when an option conflicts with one, and drafts new ones as `proposed`.
+- `weave-challenger` checks shapes against accepted decisions and challenges proposed ones.
+- `weave-stress-test architecture` accepts proposed decisions on a passing verdict. A `waived` test accepts nothing; those wait for the user to confirm.
+- `weave-fix` and `weave-execute` check decisions before changing code, stop on a conflict, and name what they consulted. `weave-execute` also flags new decisions worth recording.
+- `weave-next` mentions proposed decisions waiting for confirmation.
+
+`weave init` and the first `weave adr new` add a marked section to `AGENTS.md` so agents outside a Weave skill check decisions too. They only ever append, and they create the file if it does not exist.
+
 ## `weave status`
 
 Shows the installed `@weave-tools/weave-it` package version, the bundled skill versions, and any notices for the current repo.
@@ -744,6 +778,7 @@ Three ideas shape the design skills:
 - **Research before design, kept objective.** `weave-questions` separates "what are we trying to do" from "how does the system work now": its questions describe only the present. `weave-research` reads only `questions.md`, never the change's intent artifacts, and writes cited facts to `research.md`. Later lanes build on those facts instead of re-reading the code with a particular answer in mind.
 - **Options before interviews.** `weave-explore` (product) and `weave-architect` (engineering) open with two to four genuinely different directions, talk them through, and ask detailed questions only about the one you pick. They write a *shape* — the chosen direction, every option considered and why, decisions, assumptions, and open questions — only after you confirm. `weave-explore` stays in product language and translates research findings; `weave-architect` is technical and cites code.
 - **Independent critique.** `weave-stress-test` attacks only what is written, through a sub-agent that never saw the conversation. Anything agreed only in chat shows up as a gap and gets written into the shape.
+- **Durable reasons.** Lasting engineering decisions are recorded as ADRs (see [`weave adr`](#weave-adr)), so a later agent working on a small fix can find out why something is deliberate before undoing it.
 
 No Weave skill requires Plan Mode. Design skills write only their own lane's artifact, and only after you confirm; use `weave-capture session <lane>` to checkpoint a discussion without deciding.
 
@@ -1005,6 +1040,7 @@ tests/
 wiki/
   knowledge/
   changes/
+  decisions/
 ```
 
 ## Contribution Notes

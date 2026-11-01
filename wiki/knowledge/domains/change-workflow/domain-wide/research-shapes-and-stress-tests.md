@@ -16,6 +16,8 @@ questions -> research -> exploration (product shape) -> stress test -> prd
 - **Stress tests are independent.** `weave-stress-test <exploration|architecture>` runs the read-only `weave-challenger` sub-agent on the written shape plus `research.md` and the knowledge wiki only. It never sees the brainstorm conversation, so anything agreed only in chat surfaces as a gap and is written into the shape. The skill interviews the user on the challenges, updates the shape, writes `sessions/YYYYMMDD-HHMMSS-<id>-<lane>-stress-test.md`, and records a verdict with `weave change verdict`.
 - **Verdicts gate feature changes.** For `feat`, `weave-prd` needs a current `exploration` verdict and `weave-slices` needs a current `architecture` verdict of `holds`, `holds-with-changes`, or `waived`. A verdict is outdated once its lane is progressed again. `needs-reshaping` sends the user back to the design skill. Other change types are not gated.
 
+Throughout, accepted [recorded decisions](../features/recorded-decisions/behavior.md) act as constraints: research reports them, design skills work inside them, the challenger checks against them, and `weave-architect` drafts new ones that a passing architecture stress test accepts.
+
 ## Domain Model
 
 - **Evidence lanes**: `questions`, `research`. Real lanes for `artifacts`, `--source`, and staleness, but progressing them never moves `stage`.
@@ -41,6 +43,7 @@ questions -> research -> exploration (product shape) -> stress test -> prd
 ## Change History
 
 - 2026-10-20 (branch `change/questions-research-skills`): introduced the questions and research lanes, read-only sub-agents, options-first `weave-explore` and `weave-architect` with written shapes, `weave-stress-test` with `weave-challenger`, `weave change verdict`, and verdict gates in `weave-prd`, `weave-slices`, and `weave-next`. Retired the Plan Mode Guard.
+- 2026-11-01 (branch `change/questions-research-skills`): recorded decisions joined the pipeline as constraints, with no new lane or gate.
 
 ## Open Questions
 

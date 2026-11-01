@@ -35,7 +35,7 @@ Read, in this order, whatever exists:
 1. `wiki/changes/<change-id>/research.md` — how the system works today. Treat it as the factual baseline.
 2. `wiki/knowledge/` — current product and domain behaviour (`index.md`, relevant `domains/**`, `shared/**`).
 3. `wiki/changes/<change-id>/exploration.md` and `sessions/*-exploration.md`, newest first — for resuming.
-4. Repo docs such as `README.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and `docs/adr/` for domain terms, when knowledge is thin.
+4. Repo docs such as `README.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and recorded decisions (`weave adr list --status accepted --json`) for domain terms and constraints, when knowledge is thin. Translate any decision into product terms, as with research.
 
 Do not read `prd.md`, `architecture/`, `tasks.md`, or implementation plans. Exploration comes before them, and reading them pulls the conversation toward solutions already written down.
 

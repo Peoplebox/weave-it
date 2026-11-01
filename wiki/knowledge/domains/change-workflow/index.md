@@ -8,6 +8,7 @@ Sliced changes store work under `task-slices/<NN>-<slug>/`; legacy flat changes 
 
 ## Features
 
+- [recorded-decisions](features/recorded-decisions/behavior.md): long-lived engineering decisions (ADRs) in `wiki/decisions/`, the `weave adr` commands, and how each skill checks, drafts, and accepts them.
 - [weave-questions-and-research](features/weave-questions-and-research/behavior.md): current-state research questions and objective, cited research with read-only sub-agents; the `questions` and `research` evidence lanes.
 - [weave-explore](features/weave-explore/behavior.md): product brainstorm (options, discussion, then targeted questions) that writes the product shape to `exploration.md`.
 - [weave-stress-test](features/weave-stress-test/behavior.md): independent critique of a written shape by `weave-challenger`, an interview on the weak points, and a recorded verdict.

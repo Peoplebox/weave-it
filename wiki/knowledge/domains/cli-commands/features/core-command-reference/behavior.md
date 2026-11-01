@@ -415,6 +415,15 @@ weave change verdict <exploration|architecture> <holds|holds-with-changes|needs-
 weave change knowledge <status> [--domain <domain>...] [--shared <shared>...] [--file <file>...] [--delta <path>] [--reason <reason>] [--invalidated-by <source>] [--json]
 ```
 
+`weave adr` records long-lived engineering decisions. See [recorded-decisions](../../../change-workflow/features/recorded-decisions/behavior.md):
+
+```bash
+weave adr new "<title>" [--applies-to <path>]... [--supersedes <decision>]... [--owner <owner>] [--slug <slug>] [--json]
+weave adr list [--status <status>] [--path <file>] [--json]
+weave adr status <decision> <proposed|accepted|superseded> [--superseded-by <decision>] [--json]
+weave adr check [--base <ref>] [--json]
+```
+
 `weave task` manages task-oriented local workflow commands for the active change:
 
 ```bash

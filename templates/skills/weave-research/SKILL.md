@@ -41,7 +41,9 @@ If `questions.md` is missing or empty:
 - If the user gave research questions in this conversation, use those and record them in the **Summary** of `research.md`.
 - Otherwise stop and say: `No research questions found. Run weave-questions first, or tell me what to research.`
 
-Current-state knowledge is fair game: `wiki/knowledge/`, repo docs, ADRs, and the code and tests themselves.
+Current-state knowledge is fair game: `wiki/knowledge/`, repo docs, recorded decisions, and the code and tests themselves.
+
+Find the recorded decisions (ADRs) for the areas you research with `weave adr list --path <file> --json` or `weave adr list --status accepted --json`, and read the accepted ones. They explain why the system is the way it is, which belongs in a description of today's system. Report them under **Recorded Decisions**, including any place where the code no longer matches a decision.
 
 # Plan the Research
 

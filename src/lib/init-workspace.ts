@@ -7,6 +7,7 @@ import { type ResolvedFolder, resolveFolder } from "./folders.js";
 import { findGitRoot, getGitRemote, runGitRequired } from "./git.js";
 import { slugify, titleFromSlug } from "./ids.js";
 import { loadCurrentSession, saveCurrentSession, createCurrentSession, defaultSessionPath } from "./session-state.js";
+import { ensureDecisionGuidance } from "./decisions.js";
 import { ensureWeaveScaffold } from "./weave-scaffold.js";
 import { findWorkspaceMode } from "./workspace-mode.js";
 import { registerRepoIntoWorkspace, workspaceGitignoreBaseTemplate } from "./workspace-repos.js";
@@ -46,9 +47,10 @@ export async function initWorkspace(options: InitWorkspaceOptions = {}): Promise
 
   const existingWorkspace = await findWorkspaceMode(cwd);
   if (existingWorkspace) {
+    const guidance = await ensureDecisionGuidance(existingWorkspace.workspacePath);
     return {
       status: "already_initialized",
-      message: alreadyInitializedMessage(existingWorkspace.mode),
+      message: `${alreadyInitializedMessage(existingWorkspace.mode)}${guidance === "unchanged" ? "" : "\nAdded decision guidance to AGENTS.md."}`,
       folderPath: existingWorkspace.workspacePath,
       wikiDir: "",
       metadataDir: "",
@@ -101,6 +103,9 @@ async function initRepoMode(
   const workspaceMetadata = await writeRepoWorkspaceMetadata(folder);
   if (workspaceMetadata) {
     scaffold.created.push(".weave/workspace.yml");
+  }
+  if ((await ensureDecisionGuidance(folder.path)) !== "unchanged") {
+    scaffold.created.push("AGENTS.md");
   }
   const session = createCurrentSession(folder, options.now);
   await saveCurrentSession(session, options.sessionPath);
@@ -391,6 +396,9 @@ async function scaffoldWorkspace(input: {
   const folder = workspaceFolder(input.workspacePath, input.workspaceName);
   const scaffold = await ensureWeaveScaffold({ folder });
   const created = [...scaffold.created];
+  if ((await ensureDecisionGuidance(input.workspacePath)) !== "unchanged") {
+    created.push("AGENTS.md");
+  }
 
   if (
     await writeFileIfMissing(

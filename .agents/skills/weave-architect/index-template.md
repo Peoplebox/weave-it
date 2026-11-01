@@ -30,6 +30,9 @@ description: Canonical entry point for a folder-based architecture artifact, hol
 ## Facets
 - `<facet>.md`: <Purpose and current status.>
 
+## Decisions Recorded
+- `<adr-id>`: <The lasting decision it records. Delete this section if the change records none.>
+
 ## Tradeoffs
 - <Costs the chosen approach accepts, and what would make us revisit it.>
 

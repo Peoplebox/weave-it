@@ -446,6 +446,28 @@ describe("agent skills", () => {
     expect(skill.content).toContain("`Slices Readiness`");
   });
 
+  it("makes every code-changing path check recorded decisions", async () => {
+    for (const skill of ["weave-execute", "weave-fix"]) {
+      const { content } = await readDefaultSkill(skill);
+      expect(content, skill).toContain("weave adr list --path <file> --json");
+      expect(content, skill).toContain('weave adr new "<title>" --supersedes <id>');
+    }
+    expect((await readDefaultSkill("weave-execute")).content).toContain("weave adr check --json");
+    expect((await readDefaultSkill("weave-research")).content).toContain("**Recorded Decisions**");
+  });
+
+  it("drafts decisions in weave-architect and accepts them only through a real stress test", async () => {
+    const architect = await readDefaultSkill("weave-architect");
+    const stressTest = await readDefaultSkill("weave-stress-test");
+    const challenger = await readFile(path.join(process.cwd(), "templates", "agents", "weave-challenger.md"), "utf8");
+
+    expect(architect.content).toContain("## Record Lasting Decisions");
+    expect(architect.content).toContain("Leave the status as `proposed`.");
+    expect(stressTest.content).toContain("weave adr status <id> accepted --json");
+    expect(stressTest.content).toContain("A waived test reviewed nothing, so it accepts nothing.");
+    expect(challenger).toContain("**Conflicts with recorded decisions**");
+  });
+
   it("ships weave-challenger as a critic that never sees the conversation", async () => {
     const challenger = await readFile(path.join(process.cwd(), "templates", "agents", "weave-challenger.md"), "utf8");
 

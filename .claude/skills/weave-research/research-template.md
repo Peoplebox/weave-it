@@ -26,6 +26,10 @@ branch: <branch of each researched repo>
 
 ...
 
+## Recorded Decisions
+
+<!-- Accepted decisions that apply to the researched areas: id, what they decided, and where the code differs, if it does. Delete the section if there are none. -->
+
 ## External Dependencies
 
 <!-- Only when the questions covered libraries or services. One entry per dependency:

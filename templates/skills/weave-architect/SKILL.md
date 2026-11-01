@@ -21,7 +21,8 @@ Start with options rather than an interview. The right questions depend on the a
 - Treat `weave-architect` as entering or resuming the architecture lane for the active change.
 - Treat `prd.md` as the preferred product contract when it exists and is useful, but do not require it before architecture thinking. For `--type fix` changes, read `findings.md` as upstream product context.
 - Build on `research.md` for how the system works today instead of re-researching it.
-- Prefer existing architecture, framework conventions, helpers, data models, and ADRs over new abstractions.
+- Prefer existing architecture, framework conventions, helpers, data models, and recorded decisions over new abstractions.
+- Work inside accepted decisions (ADRs). An approach that conflicts with one is allowed as an option, but say so, and choosing it means replacing that decision openly.
 - Support both legacy `architecture.md` and folder-mode `architecture/index.md` plus `architecture/*.md` facets.
 - If both `architecture.md` and `architecture/` exist, call out the conflict and ask the user to resolve it with `weave-clarify` before relying on either.
 - Do not create implementation slices; that is `weave-slices`.
@@ -60,7 +61,7 @@ Before deep inspection, build a lightweight repo context map from `repos[]`:
 - repo kind
 - remote, when present
 - whether the repo appears relevant to the current user request
-- docs and knowledge surfaces present, such as `README.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/`, `docs/adr/`, `adr/`, `wiki/knowledge/`, `wiki/changes/`, `specs/`
+- docs and knowledge surfaces present, such as `README.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/`, `docs/adr/`, `docs/decisions/`, `adr/`, `wiki/decisions/`, `wiki/knowledge/`, `wiki/changes/`, `specs/`
 - obvious code/test surfaces that may verify current behavior
 
 Lightly inventory all registered repos. Deeply inspect only repos that appear relevant from the user's request, active change artifacts, repo names/kinds, docs, knowledge, prior changes, or code references.
@@ -101,6 +102,7 @@ wiki/changes/<change-id>/knowledge-delta.md
 ```
 
 - `research.md` is the baseline for today's system. Re-check its claims in code only where a design decision depends on them, and point out anything that no longer matches. If it is missing and the change touches existing code, say once that `weave-questions` then `weave-research` would give the design a factual baseline, then continue if the user wants to.
+- Run `weave adr list --status accepted --json` and read the decisions that apply to the affected code. Proposed decisions from this change are drafts: `weave adr list --status proposed --json`.
 - Legacy file mode: read `architecture.md`. Folder mode: read `architecture/index.md` first, then direct child facet files. Facet-only folder mode is valid context when one or more facet files are substantive even if `index.md` is missing or scaffold-only. Report conflict mode explicitly.
 - Then inspect only code and docs that can affect the design: source modules and tests in the affected repos, schemas and migrations, API and event contracts, jobs, config, feature flags, deployment files, and integration boundaries across workspace repos. Docs and ADRs are the first pass. Code and tests are the verification pass.
 
@@ -136,6 +138,7 @@ Start with a short message:
   - what changes: repos, modules, data, and contracts
   - trade-offs: complexity, performance, migration effort, operational risk, and how reversible it is
   - fit with existing patterns and `.weave/architecture-considerations.md`
+  - any accepted decision it conflicts with, and whether that decision's `Reconsider When` condition seems to apply
   - rough size (small, medium, large)
 - One open question, such as: *"Which of these fits best, what am I missing, or what would you change?"*
 
@@ -212,6 +215,20 @@ Use the templates next to this `SKILL.md` (at `<agent-skills-dir>/weave-architec
 - Do not paste the conversation. The shape is the conclusion, not the transcript.
 - Keep this skill's writes inside the change's architecture artifact. Do not create, edit, move, rename, delete, or progress artifacts in any sub-repo.
 
+## Record Lasting Decisions
+
+Draft an ADR for each decision in the shape that passes this test: a future developer could reasonably undo it without knowing why it was made, it is costly to reverse, and it affects more than this change. Most changes produce none, and some produce one or two. Implementation details do not qualify.
+
+```bash
+weave adr new "<decision in a few words>" --applies-to <path-or-glob> --json
+```
+
+- Add `--applies-to` for each file, folder, or glob the decision governs, relative to the Weave root (in workspace mode, include the repo folder). These paths are how later agents find it, so be specific.
+- Add `--supersedes <id>` when the chosen approach replaces an accepted decision.
+- Fill in the created file's sections in under a page: Context, Decision, Alternatives Rejected, Consequences, and Reconsider When. The detailed comparison stays in **Options Considered**; link to it rather than copying it.
+- Leave the status as `proposed`. `weave-stress-test architecture` challenges it and accepts it. Do not accept it yourself.
+- List the ADRs you created under **Decisions Recorded** in the shape.
+
 Set **Slices Readiness**:
 
 - `Ready` when there is a chosen approach, its contracts and data changes are clear enough to split into vertical slices, and no open question is marked as blocking slices.
@@ -282,6 +299,7 @@ Technical shape written to wiki/changes/<change-id>/<architecture/index.md | arc
 Chosen approach: <one sentence>
 Options considered: <N>
 Facets: <list, or none>
+Decisions: <proposed ADR ids, or none>
 Slices readiness: <Ready | Not ready — reason>
 
 Next step: <see below>

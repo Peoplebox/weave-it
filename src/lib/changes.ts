@@ -1082,14 +1082,14 @@ async function generateChangeId(
   throw new ChangeCommandError("id_collision", "Could not generate a unique change id");
 }
 
-function formatDatePrefix(now: Date): string {
+export function formatDatePrefix(now: Date): string {
   const year = String(now.getFullYear()).slice(-2);
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}${month}${day}`;
 }
 
-function randomChangeIdPart(): string {
+export function randomChangeIdPart(): string {
   const bytes = randomBytes(4);
   return Array.from(bytes, (byte) => idChars[byte % idChars.length]).join("");
 }

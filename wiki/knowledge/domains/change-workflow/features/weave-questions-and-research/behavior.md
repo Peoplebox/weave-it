@@ -36,3 +36,4 @@ Build an objective, cited picture of how the system works today before anything 
 ## Change History
 
 - 2026-10-20 (branch `change/questions-research-skills`): introduced both skills, the research sub-agents, and the evidence lanes.
+- 2026-11-01 (branch `change/questions-research-skills`): research reports accepted decisions that apply, and where code differs from them.

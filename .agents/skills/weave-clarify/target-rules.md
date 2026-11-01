@@ -38,6 +38,8 @@ Use the architecture artifact as the target when technical approach, affected sy
 
 If the chosen approach changes, move the previous approach under `Options Considered` with why it was dropped instead of deleting it, and update `Slices Readiness`.
 
+If the change affects a recorded decision: edit one this change still has as `proposed`; replace an accepted one with `weave adr new "<title>" --supersedes <id>`, never by editing it.
+
 Prefer `prd.md` as the product contract. If the technical clarification exposes a product ambiguity not settled by the PRD, record it under `Product Questions Raised by Technical Design` and report `prd.md` as a follow-up artifact.
 
 Add a concise dated `Revision History` entry for meaningful changes.

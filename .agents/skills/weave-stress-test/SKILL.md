@@ -53,6 +53,7 @@ Read only:
 - the shape for the lane
 - `wiki/changes/<change-id>/research.md`, if it exists
 - relevant `wiki/knowledge/` pages
+- recorded decisions: accepted ones that apply to the affected code (`weave adr list --status accepted --json`) and, for `architecture`, the ones this change proposed (`weave adr list --status proposed --json`, matching `change`)
 - `wiki/changes/<change-id>/status.yml`
 - earlier stress test notes for this lane (`sessions/*-<lane>-stress-test.md`), for decisions already settled
 
@@ -65,6 +66,7 @@ When the `weave-challenger` sub-agent is available, run it with:
 - the lens (`product` or `engineering`)
 - the shape path(s)
 - the `research.md` path and the knowledge pages you found
+- the paths of the recorded decisions you found
 - decisions settled by earlier stress tests, if any
 
 If sub-agents are not available in this agent, produce the challenges yourself using the same rules: read only the files above, look for contradictions with research, missing people, uncovered scenarios, inner conflicts, unsupported assumptions, and blocking gaps, and rank them `blocking`, `major`, or `minor`.
@@ -205,6 +207,13 @@ weave change verdict <lane> <verdict> --session <session-note-path> --reason "<o
 | `holds-with-changes` | the direction stands but some decisions or scope changed |
 | `needs-reshaping` | an answer broke the direction, or a blocking challenge has no answer the user accepts |
 
+For `architecture`, then settle the decisions this change proposed:
+
+- on `holds` or `holds-with-changes`, first update any draft your interview changed, then accept each one with `weave adr status <id> accepted --json`. Accepting a decision also marks the ones it supersedes as superseded.
+- on `needs-reshaping`, leave them `proposed`. `weave-architect` will revise them.
+
+The `exploration` lane accepts nothing, because recorded decisions are engineering decisions; it only checks the product shape against them.
+
 If the previous verdict for this lane was also `needs-reshaping`, say so in the final response and suggest talking the direction through with the people involved rather than another automatic brainstorm and stress test loop.
 
 ## Waiving
@@ -217,6 +226,8 @@ weave change verdict <lane> waived --reason "<why it is safe to skip>" --json
 
 Never waive on the user's behalf.
 
+A waived test reviewed nothing, so it accepts nothing. Proposed decisions stay `proposed` until the user explicitly confirms them; then run `weave adr status <id> accepted --json`.
+
 # Final Response
 
 Reply with exactly this shape and nothing else:
@@ -227,6 +238,7 @@ Stress test for <lane>: <verdict>.
 Challenges: <N> (<b> blocking, <m> major, <n> minor) — <d> decided, <f> deferred, <o> out of scope.
 Shape updated: <path>
 Notes: <session note path>
+Decisions accepted: <ids, or none>
 
 Next step: <next skill>
 ```

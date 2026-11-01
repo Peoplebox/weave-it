@@ -171,6 +171,20 @@ If prepare reports blockers, stop before implementation. State that no selected 
 
 Dirty work already on the expected branch is allowed when prepare succeeds. Dirty work on another branch must be resolved by the user; do not stash, discard, or force-checkout it.
 
+# Check Recorded Decisions
+
+Before implementing, find the recorded decisions (ADRs) that apply to the files the selected tasks will change, and read the accepted ones:
+
+```bash
+weave adr list --path <file> --json
+```
+
+Small tasks are where a deliberate decision is most easily undone by accident, because no design step looked at them.
+
+- If the work stays inside those decisions, continue without asking.
+- If a task would conflict with an accepted decision, stop before changing that code and tell the user which decision conflicts and why. Continue only after they choose: change the approach, or propose a replacement with `weave adr new "<title>" --supersedes <id>`. Never overturn a decision quietly.
+- If a decision's `Reconsider When` condition seems to apply, say so. Do not act on it yourself.
+
 # Execute Tasks
 
 Execute tasks in dependency order.
@@ -186,6 +200,7 @@ During implementation:
 - Use the task's `### What to build`, acceptance criteria, verification guidance, architecture refs, and repo anchors as the implementation contract.
 - Keep edits scoped to the task.
 - If the task exposes missing or ambiguous instructions, ask before guessing.
+- If implementing forces a decision that a future developer could reasonably undo without knowing why it was made, and no design artifact covers it, flag it in the final summary as a candidate ADR instead of deciding its record yourself.
 
 # Verification
 
@@ -230,6 +245,7 @@ Finish with a grouped outcome summary:
 - skipped tasks, including `done`, `invalid`, or dependency-blocked tasks
 - prepare blockers, if any
 - verification commands or checks that passed, failed, or could not run
+- recorded decisions consulted, any conflicts, and any candidate ADRs. Run `weave adr check --json` and name every decision it reports as touched
 - next steps for anything unresolved
 
 Always state that `/weave-execute` did not commit, push, open a PR, create remote branches, stash, discard changes, or publish external issue updates.

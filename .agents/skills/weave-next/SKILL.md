@@ -81,6 +81,8 @@ wiki/changes/<change-id>/findings.md
 
 Architecture may be legacy file mode or folder mode. If `architecture/` exists, treat `architecture/index.md` as the entry point and direct child facet files as part of the architecture lane. If both `architecture.md` and `architecture/` exist, mention the conflict before recommending the next step.
 
+Check recorded decisions with `weave adr list --status proposed --json`.
+
 Then read relevant recent session notes newest-first:
 
 ```text
@@ -139,6 +141,11 @@ Source-aware stale-first recommendation:
 - outdated stress test (`stress_tests.<lane>.outdated` in `weave change status --json`) -> run `weave-stress-test <lane>` again before the next lane relies on it
 - Explain which upstream lane invalidated the recommendation when `invalidated_by` is present.
 - Treat stale entries as source-aware dependency invalidation from `status.yml.artifacts`, not proof that every earlier pipeline lane was completed.
+
+Recorded decision recommendation:
+
+- Proposed decisions from this change under a passing `architecture` verdict that were never accepted, or under a `waived` one -> tell the user they are waiting for confirmation, and that `weave adr status <id> accepted` records it. Do not make this primary over a stale lane or a required stress test.
+- Proposed decisions with no architecture verdict yet are covered by `weave-stress-test architecture`; do not mention them separately.
 
 Knowledge freshness recommendation:
 
@@ -209,7 +216,7 @@ In `Current Change`, include change id, title when available, target repo or rep
 
 In `Artifact State`, summarize `questions.md` and `research.md` when present, then `exploration.md` (with PRD Readiness), `prd.md`, the architecture artifact (with Slices Readiness), and slice or task evidence.
 
-In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present, and each stress test verdict when `status.yml.stress_tests` is present (say when one is outdated).
+In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present, and each stress test verdict when `status.yml.stress_tests` is present (say when one is outdated), and any proposed decisions waiting for confirmation.
 
 In `Artifact State`, also name the auto-advance transitions that are on and the latest run when `status.yml.runs` is present.
 
