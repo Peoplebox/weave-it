@@ -1,4 +1,7 @@
 version: 1
 mode: repo
 name: Weave It
+checkout: worktree
+worktrees:
+  setup: npm ci && npm run build
 repos: {}
