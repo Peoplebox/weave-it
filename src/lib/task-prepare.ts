@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
+import { realpath } from "node:fs/promises";
 import { activeChangeContext, ChangeCommandError } from "./changes.js";
 import { pathExists } from "./files.js";
 import {
@@ -11,8 +12,12 @@ import {
   currentHead,
   findGitRoot,
   isWorktreeDirty,
+  probeGitRoot,
+  resolveDefaultBase,
+  runGit,
 } from "./git.js";
 import { readWorkspaceMetadata } from "./workspace-repos.js";
+import { ensureChangeWorktrees, recordCheckoutInStatus, rootRepoId, workspaceCheckoutMode } from "./worktrees.js";
 
 export type PrepareStatus = "ok" | "blocked";
 export type PrepareBranchStatus = "created" | "checked_out" | "already_active" | "skipped_not_git";
@@ -54,6 +59,7 @@ type RepoTarget = {
   absolutePath: string;
   relativePath: string;
   mode: "repo" | "workspace";
+  base?: string;
 };
 
 type RepoPlan = RepoTarget & {
@@ -65,6 +71,10 @@ export async function prepareTasks(options: PrepareOptions): Promise<PrepareResu
   const now = options.now ?? new Date();
   const context = await activeChangeContext({ cwd: options.cwd, now, sessionPath: options.sessionPath });
   const branch = context.change.branch;
+
+  if ((await workspaceCheckoutMode(context.target.path)) === "worktree") {
+    return prepareWorktrees(context, options, now);
+  }
 
   const blockers: PrepareBlocker[] = [];
   const artifactRootBlocker = await artifactRootBranchBlocker(context.target.path, branch);
@@ -82,10 +92,55 @@ export async function prepareTasks(options: PrepareOptions): Promise<PrepareResu
   }
 
   const repos = await applyPlans(plans, branch);
+  if (!Array.isArray(repos)) {
+    return result({ status: "blocked", context, repos: [], blockers: [repos] });
+  }
   if (repos.length > 0) {
     await writeExecutionState(context.change.changePath, branch, repos, now);
   }
 
+  return result({ status: "ok", context, repos, blockers: [] });
+}
+
+// In a worktree checkout nothing is switched: prepare checks every repo's worktree and
+// creates the ones that are missing, such as a repo registered after the change started.
+async function prepareWorktrees(
+  context: Awaited<ReturnType<typeof activeChangeContext>>,
+  options: PrepareOptions,
+  now: Date,
+): Promise<PrepareResult> {
+  const branch = context.change.branch;
+  let worktrees: Awaited<ReturnType<typeof ensureChangeWorktrees>>;
+  try {
+    worktrees = await ensureChangeWorktrees({ rootPath: context.target.path, changeId: context.change.id, branch, repos: options.repos, now });
+  } catch (error) {
+    if (error instanceof ChangeCommandError && error.code === "worktree_blocked") {
+      const details = error.details as { blockers?: PrepareBlocker[] } | undefined;
+      return result({ status: "blocked", context, repos: [], blockers: details?.blockers ?? [{ target: context.target.path, reason: error.message }] });
+    }
+    throw error;
+  }
+
+  const repos: PrepareRepoResult[] = [];
+  for (const repo of worktrees.repos) {
+    if (repo.id === rootRepoId && context.mode === "workspace") continue;
+    const absolutePath = path.join(worktrees.folder, repo.path);
+    const head = repo.status === "skipped_not_git" ? undefined : await currentHead(absolutePath);
+    repos.push({
+      id: repo.id,
+      path: repo.path,
+      mode: context.mode,
+      state: repo.status === "skipped_not_git" ? "skipped" : "prepared",
+      branch_status: repo.status === "created" ? "created" : repo.status === "reused" ? "already_active" : "skipped_not_git",
+      branch,
+      ...(head ? { prepared_head: head } : {}),
+    });
+  }
+
+  if (repos.length > 0) {
+    await writeExecutionState(context.change.changePath, branch, repos, now);
+  }
+  await recordCheckoutInStatus(context.change.changePath, worktrees.repos);
   return result({ status: "ok", context, repos, blockers: [] });
 }
 
@@ -119,7 +174,7 @@ async function workspaceModeTargets(rootPath: string, blockers: PrepareBlocker[]
       blockers.push({ target: repoId, reason: `Registered repo path does not exist: ${entry.path}` });
       continue;
     }
-    targets.push({ id: repoId, absolutePath, relativePath: entry.path, mode: "workspace" });
+    targets.push({ id: repoId, absolutePath, relativePath: entry.path, mode: "workspace", ...(entry.base ? { base: entry.base } : {}) });
   }
 
   return targets;
@@ -148,8 +203,14 @@ async function artifactRootBranchBlocker(rootPath: string, branch: string): Prom
 async function preflightTargets(targets: RepoTarget[], branch: string, blockers: PrepareBlocker[]): Promise<RepoPlan[]> {
   const plans: RepoPlan[] = [];
   for (const target of targets) {
-    const gitRoot = await findGitRoot(target.absolutePath);
-    if (!gitRoot || (target.mode === "workspace" && path.resolve(gitRoot) !== path.resolve(target.absolutePath))) {
+    const probe = await probeGitRoot(target.absolutePath);
+    if (probe.kind === "error") {
+      blockers.push({ target: target.id, reason: `git could not read the repo: ${probe.message}` });
+      continue;
+    }
+    // Compare real paths: a registered path that is a symlink is still its own repo.
+    const absolute = await realpath(target.absolutePath);
+    if (probe.kind === "not_git" || (target.mode === "workspace" && probe.root !== absolute)) {
       plans.push({ ...target, state: "skipped", branchStatus: "skipped_not_git" });
       continue;
     }
@@ -170,6 +231,17 @@ async function preflightTargets(targets: RepoTarget[], branch: string, blockers:
       continue;
     }
 
+    // A new change branch starts from whatever is checked out, so it must be the branch
+    // work normally starts from, not someone's feature branch.
+    const start = target.base?.replace(/^origin\//, "") ?? (await resolveDefaultBase(target.absolutePath, { fetch: false }))?.branch;
+    if (start && current !== start && !(await branchExists(target.absolutePath, branch))) {
+      blockers.push({
+        target: target.id,
+        reason: `Repo is on ${current}, so ${branch} would include that branch's work. Switch it to ${start} first, or set \`base\` for this repo in .weave/workspace.yml.`,
+      });
+      continue;
+    }
+
     plans.push({
       ...target,
       state: "prepared",
@@ -179,13 +251,30 @@ async function preflightTargets(targets: RepoTarget[], branch: string, blockers:
   return blockers.length > 0 ? [] : plans;
 }
 
-async function applyPlans(plans: RepoPlan[], branch: string): Promise<PrepareRepoResult[]> {
+async function applyPlans(plans: RepoPlan[], branch: string): Promise<PrepareRepoResult[] | PrepareBlocker> {
   const repos: PrepareRepoResult[] = [];
+  const moved: Array<{ plan: RepoPlan; previous: string }> = [];
   for (const plan of plans) {
-    if (plan.branchStatus === "checked_out") {
-      await checkoutBranch(plan.absolutePath, branch);
-    } else if (plan.branchStatus === "created") {
-      await createBranch(plan.absolutePath, branch);
+    const previous = await currentBranch(plan.absolutePath);
+    try {
+      if (plan.branchStatus === "checked_out") {
+        await checkoutBranch(plan.absolutePath, branch);
+      } else if (plan.branchStatus === "created") {
+        await createBranch(plan.absolutePath, branch);
+      }
+    } catch (error) {
+      // Put back the repos this run already moved, so no repo is left half switched.
+      for (const done of moved.reverse()) {
+        await runGit(["checkout", done.previous], done.plan.absolutePath);
+        if (done.plan.branchStatus === "created") {
+          await runGit(["branch", "-D", branch], done.plan.absolutePath);
+        }
+      }
+      const message = error instanceof Error ? error.message.split("\n").filter(Boolean).at(-1) ?? error.message : String(error);
+      return { target: plan.id, reason: `Could not switch to ${branch}: ${message}. Repos moved earlier in this run were switched back.` };
+    }
+    if (previous && plan.branchStatus !== "already_active" && plan.branchStatus !== "skipped_not_git") {
+      moved.push({ plan, previous });
     }
 
     const head = plan.state === "prepared" ? await currentHead(plan.absolutePath) : undefined;

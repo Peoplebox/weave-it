@@ -480,6 +480,8 @@ function workspaceMetadataTemplate(input: {
     version: 1,
     mode: input.mode,
     name: input.name,
+    // New workspaces give each change its own folder of worktrees.
+    checkout: "worktree",
     repos: input.repos,
   });
 }

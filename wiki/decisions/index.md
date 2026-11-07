@@ -4,6 +4,7 @@
 
 | Decision | Title | Status | Applies to |
 | --- | --- | --- | --- |
+| [261107-ohne-each-change-gets-its-own-worktree-folder](261107-ohne-each-change-gets-its-own-worktree-folder.md) | Each change gets its own folder of worktrees, made with plain git | accepted | `src/lib/worktrees.ts`, `src/lib/changes.ts`, `src/lib/task-prepare.ts`, `src/lib/git.ts` |
 | [261101-qcgh-stress-tests-see-only-what-is-written-down](261101-qcgh-stress-tests-see-only-what-is-written-down.md) | Stress tests see only what is written down | accepted | `templates/skills/weave-stress-test/**`, `templates/agents/weave-challenger.md` |
 | [261101-opav-research-never-reads-intent](261101-opav-research-never-reads-intent.md) | Research never reads the change's intent | accepted | `templates/skills/weave-questions/**`, `templates/skills/weave-research/**` |
 | [261101-jpss-no-skill-requires-plan-mode](261101-jpss-no-skill-requires-plan-mode.md) | No skill requires Plan Mode | accepted | `templates/skills/weave-explore/**`, `templates/skills/weave-architect/**` |

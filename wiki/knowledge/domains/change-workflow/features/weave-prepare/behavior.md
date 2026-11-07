@@ -32,7 +32,10 @@ Prepare has no task selector. In repo mode, it targets the artifact root repo as
 - Prepare uses a two-phase preflight/apply flow. If any targeted repo has a blocker, no targeted repo branch is moved. Untargeted workspace repos are not inspected, switched, or blocked.
 - A git repo already on the expected branch succeeds even when dirty because no branch movement is needed.
 - A dirty git repo on another branch blocks. Prepare never stashes, commits, discards, or force-checkouts dirty work.
-- Clean git repos checkout the expected branch if it exists locally, or create it from the current branch if it is missing.
+- Clean git repos checkout the expected branch if it exists locally, or create it from the current branch if it is missing. A clean repo on a branch other than its `base` (or its default branch) blocks instead, so the change branch never picks up someone else's work.
+- If switching a later repo fails, prepare switches the repos it already moved back to their previous branch, deletes the branches it created, and reports the failure as a blocker.
+- A repo whose git state cannot be read blocks instead of being skipped. Registered paths are compared as real paths, so a symlinked repo path is prepared.
+- With `checkout: worktree`, prepare never switches branches: it reports existing repo worktrees as `already_active`, creates worktrees for registered repos the change does not have yet (`created`), and records them in `status.yml.checkout`. See [change-checkouts](../../domain-wide/change-checkouts.md).
 - Detached HEAD or unknown current branch blocks for git repos.
 - Non-git targeted repos/folders succeed with `state: skipped` and `branch_status: skipped_not_git`.
 

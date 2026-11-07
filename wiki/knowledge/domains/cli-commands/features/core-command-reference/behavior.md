@@ -404,11 +404,13 @@ These command families no longer expose multi-target behavior. `--target`, `all`
 `weave change` manages durable change folders under the resolved root's `wiki/changes/` directory:
 
 ```bash
-weave change new "<title>" [--type <type>] [--slug <slug>] [--json]
+weave change new "<title>" [--type <type>] [--slug <slug>] [--repo <id>] [--base <ref>] [--no-fetch] [--json]
 weave change list [--json]
 weave change current [--json]
 weave change status [change] [--json]
 weave change switch <change> [--json]
+weave change setup [--approve] [--json]
+weave change close [change] [--json]
 weave change progress <lane> [--source <source>...] [--no-invalidate|--invalidate <lanes>] [--json]
 weave change clear-stale <lane> [--reason <reason>] [--json]
 weave change verdict <exploration|architecture> <holds|holds-with-changes|needs-reshaping|waived> [--reason <reason>] [--session <path>] [--json]

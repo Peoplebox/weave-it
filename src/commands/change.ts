@@ -46,13 +46,25 @@ import {
   type FinishedRunResult,
   type RunTrigger,
   startChangeRun,
+  closeChange,
+  type CloseChangeResult,
+  setupChange,
 } from "../lib/changes.js";
 import { withNotices } from "../lib/with-notices.js";
+import type { SetupCommand, SetupResult } from "../lib/worktrees.js";
 
 interface ChangeNewOptions {
   slug?: string;
   type?: ChangeType;
   autoAdvance?: boolean;
+  repo?: string[];
+  base?: string[];
+  fetch?: boolean;
+  json?: boolean;
+}
+
+interface ChangeSetupOptions {
+  approve?: boolean;
   json?: boolean;
 }
 
@@ -112,6 +124,14 @@ export function changeCommand(): Command {
     .option("--type <type>", "change type: feat, fix, refactor, docs, test, ci, or chore", parseChangeType, "feat")
     .option("--slug <slug>", "change slug override")
     .option("--no-auto-advance", "start with every auto-advance transition off instead of the type defaults")
+    .option("--repo <id>", "worktree checkouts: only create worktrees for this registered repo (repeatable)", collectValues, [])
+    .option(
+      "--base <ref>",
+      "ref the change branch starts from, or <repo>=<ref> for one repo (`root` is the workspace root); repeatable; defaults to the remote default branch",
+      collectValues,
+      [],
+    )
+    .option("--no-fetch", "worktree checkouts: do not fetch the base branch first")
     .option("--json", "print machine-readable JSON")
     .action(async (title: string, options: ChangeNewOptions) => {
       const json = options.json ?? false;
@@ -123,6 +143,9 @@ export function changeCommand(): Command {
             type: options.type,
             slug: options.slug,
             autoAdvance: options.autoAdvance,
+            repos: options.repo,
+            ...parseBases(options.base ?? []),
+            fetch: options.fetch,
           });
           return { json: result, text: result.message };
         });
@@ -350,7 +373,72 @@ export function changeCommand(): Command {
       });
     });
 
+  command
+    .command("setup")
+    .description("Worktree checkouts: run each worktree's setup command once, after a person approves it.")
+    .option("--approve", "review and approve new setup commands (needs a person at a terminal)")
+    .option("--json", "print machine-readable JSON")
+    .action(async (options: ChangeSetupOptions) => {
+      await runAction(options.json ?? false, async () => {
+        const result = await setupChange({
+          cwd: process.cwd(),
+          approve: options.approve,
+          confirm: interactiveTerminal() ? confirmSetupCommands : undefined,
+        });
+        writeResult(result, options.json ?? false);
+        if (result.status !== "ok" && result.status !== "nothing_to_run") {
+          process.exitCode = 1;
+        }
+      });
+    });
+
+  command
+    .command("close")
+    .description("Worktree checkouts: remove a change's worktrees. Refuses uncommitted work and keeps every branch.")
+    .argument("[change]", "change id, token, slug, or title substring; defaults to the active change")
+    .option("--json", "print machine-readable JSON")
+    .action(async (change: string | undefined, options: ChangeTargetOptions) => {
+      await runAction(options.json ?? false, async () => {
+        writeResult(await closeChange({ cwd: process.cwd(), change }), options.json ?? false);
+      });
+    });
+
   return command;
+}
+
+// `--base feature/x` sets every repo's starting point; `--base api=feature/x` sets one repo's.
+function parseBases(values: string[]): { base?: string; repoBases?: Record<string, string> } {
+  const repoBases: Record<string, string> = {};
+  let base: string | undefined;
+  for (const value of values) {
+    const separator = value.indexOf("=");
+    if (separator > 0) {
+      const repo = value.slice(0, separator).trim();
+      const ref = value.slice(separator + 1).trim();
+      if (!ref) {
+        throw new InvalidArgumentError(`--base ${value} is missing a ref after "=".`);
+      }
+      repoBases[repo] = ref;
+    } else if (base !== undefined && base !== value) {
+      throw new InvalidArgumentError(`--base was given twice (${base} and ${value}). Use --base <repo>=<ref> for repos that start somewhere else.`);
+    } else {
+      base = value.trim();
+    }
+  }
+  return { ...(base ? { base } : {}), ...(Object.keys(repoBases).length > 0 ? { repoBases } : {}) };
+}
+
+function interactiveTerminal(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+async function confirmSetupCommands(commands: SetupCommand[]): Promise<boolean> {
+  const { confirm, isCancel } = await import("@clack/prompts");
+  process.stdout.write(
+    ["These setup commands will run in the change's worktrees:", ...commands.map((item) => `  ${item.repo} (${item.path}): ${item.command}`), ""].join("\n"),
+  );
+  const answer = await confirm({ message: "Approve and run them? Approval is remembered on this machine for these exact commands." });
+  return !isCancel(answer) && answer === true;
 }
 
 function parseOnOff(value: string): boolean {
@@ -455,7 +543,9 @@ function writeResult(
     | VerdictChangeResult
     | AutoAdvanceChangeResult
     | ChangeRunResult
-    | ListChangeRunsResult,
+    | ListChangeRunsResult
+    | SetupResult
+    | CloseChangeResult,
   json: boolean,
 ): void {
   if (json) {

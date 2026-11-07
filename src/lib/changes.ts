@@ -6,8 +6,9 @@ import { promisify } from "node:util";
 import YAML from "yaml";
 import { architectureMarkdownPaths, hasSubstantiveMarkdown, resolveArchitectureArtifact } from "./architecture-artifact.js";
 import { artifactFrontmatter } from "./artifact-metadata.js";
+import { ChangeCommandError } from "./change-error.js";
 import { pathExists } from "./files.js";
-import { findGitRoot } from "./git.js";
+import { findGitRoot, listGitWorktrees } from "./git.js";
 import { slugify, titleFromSlug } from "./ids.js";
 import {
   autoAdvanceDefaults,
@@ -22,6 +23,22 @@ import {
 import { defaultSessionPath, type SessionCurrentChange } from "./session-state.js";
 import { ensureWeaveScaffold } from "./weave-scaffold.js";
 import { resolveChangeContext, type WorkspaceModeKind } from "./workspace-mode.js";
+import type { CheckoutMode } from "./workspace-repos.js";
+import {
+  changeFolderPath,
+  ensureChangeWorktrees,
+  readLocalChangeInfo,
+  recordCheckoutInStatus,
+  removeChangeWorktrees,
+  runChangeSetup,
+  workspaceCheckoutMode,
+  type RemoveWorktreesResult,
+  type SetupCommand,
+  type SetupResult,
+  type WorktreeRepoResult,
+} from "./worktrees.js";
+
+export { ChangeCommandError };
 
 const execFileAsync = promisify(execFile);
 const idChars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -132,16 +149,6 @@ export interface KnowledgeMetadata {
   invalidated_at?: string;
 }
 
-export class ChangeCommandError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly details?: unknown,
-  ) {
-    super(message);
-  }
-}
-
 export interface ChangeTargetResult {
   path: string;
   changePath: string;
@@ -158,6 +165,13 @@ export interface ChangeOperationResult {
   type: ChangeType;
   branch: string;
   auto_advance: Record<string, boolean>;
+  checkout: CheckoutMode;
+  // Worktree checkouts only: the change folder to open, its slot, and each repo's worktree.
+  folder?: string;
+  slot?: number;
+  repos?: WorktreeRepoResult[];
+  copied?: string[];
+  warnings?: string[];
   targets: ChangeTargetResult[];
   message: string;
 }
@@ -178,6 +192,9 @@ export interface ChangeSummary {
   branch: string;
   path: string;
   changePath: string;
+  // Worktree checkouts only: the change folder on this machine and its slot.
+  folder?: string;
+  slot?: number;
   created_at?: string;
   updated_at?: string;
   active: boolean;
@@ -256,6 +273,8 @@ export interface SwitchChangeResult {
   status: "ok";
   change: ChangeSummary;
   branchStatus: BranchStatus;
+  folder?: string;
+  repos?: WorktreeRepoResult[];
   target: {
     id?: string;
     name?: string;
@@ -271,6 +290,14 @@ export interface CreateChangeOptions {
   slug?: string;
   // `false` starts the change with every auto-advance transition off instead of the type defaults.
   autoAdvance?: boolean;
+  // Worktree checkouts: limit which registered repos get a worktree, override the
+  // starting ref, or skip fetching it first.
+  repos?: string[];
+  // Also lets an in-place checkout start a change on top of another change branch.
+  base?: string;
+  // Per-repo starting refs, keyed by repo id (`root` for the workspace root); these win over `base`.
+  repoBases?: Record<string, string>;
+  fetch?: boolean;
   now?: Date;
   randomId?: () => string;
   sessionPath?: string;
@@ -387,31 +414,77 @@ export async function createChange(options: CreateChangeOptions): Promise<Change
   const targets = [await resolveTarget(options.cwd, options.sessionPath)];
   const type = options.type ?? "feat";
   const slug = normalizeChangeSlug(options.slug ?? title);
-  const id = await generateChangeId(targets, slug, now, options.randomId ?? randomChangeIdPart);
-  const branch = changeBranch(id);
   const autoAdvance = options.autoAdvance === false ? {} : autoAdvanceDefaults[type];
 
   await assertGitTargets(targets);
+  const checkout = await workspaceCheckoutMode(targets[0]!.path);
+  const id = await generateChangeId(targets, slug, now, options.randomId ?? randomChangeIdPart, checkout);
+  const branch = changeBranch(id);
   await assertChangeMissing(targets, id);
 
+  if (checkout === "worktree") {
+    const worktrees = await ensureChangeWorktrees({
+      rootPath: targets[0]!.path,
+      changeId: id,
+      branch,
+      repos: options.repos,
+      base: options.base,
+      repoBases: options.repoBases,
+      fetch: options.fetch,
+      now,
+    });
+    const changePath = await writeChangeFiles(worktrees.folder, { id, slug, title, type, branch, autoAdvance, now });
+    await recordCheckoutInStatus(changePath, worktrees.repos);
+    return summarizeChangeOperation({
+      id,
+      slug,
+      title,
+      type,
+      branch,
+      autoAdvance,
+      checkout,
+      worktrees,
+      targets: [{ path: worktrees.folder, changePath, branch, branchStatus: "created", current: true }],
+      verb: "Created",
+    });
+  }
+
+  // In-place checkouts only switch the root here; registered repos follow at prepare.
+  const base = options.repoBases?.root ?? options.base;
   const results: ChangeTargetResult[] = [];
   for (const target of targets) {
-    const branchStatus = await ensureChangeBranch(target.path, branch);
-    await ensureWeaveScaffold({ folder: { path: target.path } });
-    const changePath = changeDir(target.path, id);
-    await mkdir(changePath, { recursive: false });
-    await mkdir(path.join(changePath, "sessions"));
-    await writeFile(path.join(changePath, "status.yml"), statusTemplate({ id, slug, title, type, branch, autoAdvance, now }));
-    // Feature changes scaffold exploration.md and start at `stage: exploration`. Non-feature
-    // changes start at `stage: started` with no exploration artifact; their first real artifact
-    // is created later by the fitting skill (weave-architect, weave-issues, or weave-prd).
-    if (type === "feat") {
-      await writeFile(path.join(changePath, "exploration.md"), explorationTemplate(title, title, now));
+    const current = await currentBranch(target.path);
+    if (!base && current?.startsWith("change/")) {
+      throw new ChangeCommandError(
+        "stacked_change",
+        `You are on ${current}, so the new change would include that change's work. Switch to your main branch first, or pass --base <ref> to start from a specific ref on purpose.`,
+        { branch: current },
+      );
     }
+    const branchStatus = await ensureChangeBranch(target.path, branch, base);
+    const changePath = await writeChangeFiles(target.path, { id, slug, title, type, branch, autoAdvance, now });
     results.push({ path: target.path, changePath, branch, branchStatus, current: true });
   }
 
-  return summarizeChangeOperation({ id, slug, title, type, branch, autoAdvance, targets: results, verb: "Created" });
+  return summarizeChangeOperation({ id, slug, title, type, branch, autoAdvance, checkout, targets: results, verb: "Created" });
+}
+
+async function writeChangeFiles(
+  root: string,
+  input: { id: string; slug: string; title: string; type: ChangeType; branch: string; autoAdvance: AutoAdvanceFlags; now: Date },
+): Promise<string> {
+  await ensureWeaveScaffold({ folder: { path: root } });
+  const changePath = changeDir(root, input.id);
+  await mkdir(changePath, { recursive: false });
+  await mkdir(path.join(changePath, "sessions"));
+  await writeFile(path.join(changePath, "status.yml"), statusTemplate(input));
+  // Feature changes scaffold exploration.md and start at `stage: exploration`. Non-feature
+  // changes start at `stage: started` with no exploration artifact; their first real artifact
+  // is created later by the fitting skill (weave-architect, weave-issues, or weave-prd).
+  if (input.type === "feat") {
+    await writeFile(path.join(changePath, "exploration.md"), explorationTemplate(input.title, input.title, input.now));
+  }
+  return changePath;
 }
 
 export async function listChanges(options: ListChangesOptions): Promise<ChangeListResult> {
@@ -420,7 +493,7 @@ export async function listChanges(options: ListChangesOptions): Promise<ChangeLi
 
   for (const target of targets) {
     const activeId = await branchChangeIdForTarget(target.path);
-    const changes = await readChanges(target.path, activeId);
+    const changes = await readChangesWithWorktrees(target.path, activeId);
     summaries.push({ id: target.id, name: target.name, path: target.path, changes });
   }
 
@@ -455,7 +528,7 @@ export async function statusChange(options: StatusChangeOptions): Promise<Status
 
   for (const target of targets) {
     if (options.change) {
-      const changes = await readChanges(target.path, await branchChangeIdForTarget(target.path));
+      const changes = await readChangesWithWorktrees(target.path, await branchChangeIdForTarget(target.path));
       const change = resolveChangeReference(changes, options.change);
       const branch = await currentBranch(target.path);
       results.push({
@@ -510,6 +583,12 @@ export async function activeChangeContext(options: CurrentChangeOptions): Promis
   };
   const current = await currentContextForTarget(target);
   if (!current.current) {
+    if ((await workspaceCheckoutMode(target.path)) === "worktree") {
+      throw new ChangeCommandError(
+        "no_current_change",
+        "No active Weave change here. This workspace keeps each change in its own folder: run `weave change list` and open the change's folder, or run `weave change new` to start one.",
+      );
+    }
     throw new ChangeCommandError("no_current_change", "No active Weave change found. Run `weave change new` or `weave change switch` first.");
   }
 
@@ -524,6 +603,9 @@ export async function activeChangeContext(options: CurrentChangeOptions): Promis
 
 export async function switchChange(options: SwitchChangeOptions): Promise<SwitchChangeResult> {
   const target = await resolveTarget(options.cwd, options.sessionPath);
+  if ((await workspaceCheckoutMode(target.path)) === "worktree") {
+    return openChangeFolder(target, options.change);
+  }
   await assertCleanGitTargets([target]);
 
   const changes = await readChanges(target.path, await branchChangeIdForTarget(target.path));
@@ -544,6 +626,165 @@ export async function switchChange(options: SwitchChangeOptions): Promise<Switch
       `Branch: ${change.branch} (${formatBranchStatus(branchStatus)})`,
       `Path: ${change.path}`,
       "Current: yes",
+    ].join("\n"),
+  };
+}
+
+// Worktree checkouts never switch branches: "switching" makes sure the change's folder
+// and worktrees exist on this machine and says where to open it.
+async function openChangeFolder(target: ChangeTarget, reference: string): Promise<SwitchChangeResult> {
+  const changes = await readChangesWithWorktrees(target.path, await branchChangeIdForTarget(target.path));
+  let found: { id: string; branch: string };
+  try {
+    found = resolveChangeReference(changes, reference);
+  } catch (error) {
+    if (!(error instanceof ChangeCommandError) || error.code !== "change_not_found") {
+      throw error;
+    }
+    // Not open on this machine: look for the change branch itself, such as a teammate's
+    // pushed change or one closed here earlier.
+    found = await findChangeBranch(target.path, reference, changes);
+  }
+
+  const worktrees = await ensureChangeWorktrees({ rootPath: target.path, changeId: found.id, branch: found.branch, fetchBranch: true });
+  const changePath = changeDir(worktrees.folder, found.id);
+  if (await pathExists(path.join(changePath, "status.yml"))) {
+    await recordCheckoutInStatus(changePath, worktrees.repos);
+  }
+  const change: ChangeSummary = {
+    ...(await readChangeMetadata(changePath, found.id)),
+    path: path.join("wiki", "changes", found.id),
+    changePath,
+    active: true,
+  };
+  const created = worktrees.repos.some((repo) => repo.status === "created");
+
+  return {
+    status: "ok",
+    change: { ...change, changePath, folder: worktrees.folder, slot: worktrees.slot, active: true },
+    branchStatus: created ? "created" : "already_active",
+    folder: worktrees.folder,
+    repos: worktrees.repos,
+    target: { id: target.id, name: target.name, path: target.path },
+    message: [`Change: ${change.id}`, "", `Title: ${change.title}`, `Stage: ${change.stage}`, `Branch: ${change.branch}`, "", ...formatWorktreeLines(worktrees)].join("\n"),
+  };
+}
+
+// Matches a reference against `change/<id>` branches in the workspace root, local and on
+// origin, the same way change references match ids, tokens, and slugs.
+async function findChangeBranch(root: string, reference: string, known: ChangeSummary[]): Promise<{ id: string; branch: string }> {
+  const ref = reference.trim().toLowerCase();
+  const local = (await git(["for-each-ref", "--format=%(refname:short)", "refs/heads/change/"], root))?.split("\n") ?? [];
+  const hasOrigin = Boolean(await git(["remote", "get-url", "origin"], root));
+  const remote = hasOrigin
+    ? ((await git(["ls-remote", "--heads", "origin", "refs/heads/change/*"], root))?.split("\n") ?? []).map((line) =>
+        line.split("\t")[1]?.replace(/^refs\/heads\//, ""),
+      )
+    : [];
+  const knownIds = new Set(known.map((change) => change.id));
+  const ids = [...new Set([...local, ...remote].filter((name): name is string => Boolean(name?.startsWith("change/"))).map((name) => name.slice("change/".length)))]
+    .filter((id) => !knownIds.has(id));
+  const matches = ids.filter((id) => {
+    const [, token, ...slug] = id.split("-");
+    return id.toLowerCase() === ref || token === ref || slug.join("-").toLowerCase().includes(ref);
+  });
+
+  if (matches.length === 0) {
+    throw new ChangeCommandError(
+      "change_not_found",
+      `No matching change found: ${reference}. Also looked for change branches here${hasOrigin ? " and on origin" : ""}.`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new ChangeCommandError(
+      "ambiguous_change",
+      `Ambiguous change reference: ${reference}\n${matches.map((id) => `  ${id}`).join("\n")}`,
+      { candidates: matches.map((id) => ({ id })) },
+    );
+  }
+
+  const id = matches[0]!;
+  const branch = changeBranch(id);
+  const localRef = local.includes(branch) ? branch : `origin/${branch}`;
+  if (localRef !== branch) {
+    await git(["fetch", "--quiet", "origin", branch], root);
+  }
+  if (!(await git(["cat-file", "-t", `${localRef}:${path.posix.join("wiki", "changes", id, "status.yml")}`], root))) {
+    throw new ChangeCommandError(
+      "not_a_change_branch",
+      `${branch} has no Weave change files (wiki/changes/${id}/status.yml)${localRef === branch ? "" : " on origin"}, so there is nothing to open. Commit and push the change files on that branch first.`,
+      { branch },
+    );
+  }
+  return { id, branch };
+}
+
+export interface SetupChangeOptions {
+  cwd: string;
+  approve?: boolean;
+  confirm?: (commands: SetupCommand[]) => Promise<boolean>;
+  sessionPath?: string;
+  now?: Date;
+}
+
+export async function setupChange(options: SetupChangeOptions): Promise<SetupResult> {
+  const context = await activeChangeContext({ cwd: options.cwd, sessionPath: options.sessionPath });
+  if ((await workspaceCheckoutMode(context.target.path)) !== "worktree") {
+    throw new ChangeCommandError(
+      "not_worktree_checkout",
+      "`weave change setup` prepares change worktrees, and this workspace switches branches in place (`checkout: in-place`), so there is nothing to set up.",
+    );
+  }
+  return runChangeSetup({
+    folder: context.target.path,
+    changeId: context.change.id,
+    branch: context.change.branch,
+    approve: options.approve,
+    confirm: options.confirm,
+    now: options.now,
+  });
+}
+
+export interface CloseChangeOptions {
+  cwd: string;
+  change?: string;
+  sessionPath?: string;
+}
+
+export interface CloseChangeResult extends RemoveWorktreesResult {
+  status: "ok";
+  change: string;
+  message: string;
+}
+
+export async function closeChange(options: CloseChangeOptions): Promise<CloseChangeResult> {
+  const target = await resolveTarget(options.cwd, options.sessionPath);
+  if ((await workspaceCheckoutMode(target.path)) !== "worktree") {
+    throw new ChangeCommandError(
+      "not_worktree_checkout",
+      "`weave change close` removes change worktrees, and this workspace switches branches in place (`checkout: in-place`).",
+    );
+  }
+
+  const activeId = await branchChangeIdForTarget(target.path);
+  const changes = await readChangesWithWorktrees(target.path, activeId);
+  const reference = options.change ?? activeId;
+  if (!reference) {
+    throw new ChangeCommandError("missing_change", "Name the change to close: `weave change close <change>`.");
+  }
+  const change = resolveChangeReference(changes, reference);
+  const removed = await removeChangeWorktrees({ rootPath: target.path, changeId: change.id, branch: change.branch, cwd: options.cwd });
+
+  return {
+    status: "ok",
+    change: change.id,
+    ...removed,
+    message: [
+      `Closed change: ${change.id}`,
+      `Removed: ${removed.removed.join(", ")}`,
+      "",
+      "Branches kept:",
+      ...removed.branches.map((branch) => `  ${branch.repo}  ${branch.branch}${branch.pushed ? "" : "  (not on origin)"}`),
     ].join("\n"),
   };
 }
@@ -1069,11 +1310,18 @@ async function generateChangeId(
   slug: string,
   now: Date,
   randomId: () => string,
+  checkout: CheckoutMode = "in-place",
 ): Promise<string> {
   const date = formatDatePrefix(now);
   for (let index = 0; index < 20; index += 1) {
     const id = `${date}-${randomId()}-${slug}`;
-    const exists = await Promise.all(targets.map((target) => pathExists(changeDir(target.path, id))));
+    const exists = await Promise.all(
+      targets.map(async (target) =>
+        (await pathExists(changeDir(target.path, id))) ||
+        Boolean(await git(["rev-parse", "--verify", "--quiet", `refs/heads/${changeBranch(id)}`], target.path)) ||
+        (checkout === "worktree" && (await pathExists(await changeFolderPath(target.path, id)))),
+      ),
+    );
     if (!exists.some(Boolean)) {
       return id;
     }
@@ -1180,6 +1428,35 @@ async function readChanges(root: string, activeId?: string): Promise<ChangeSumma
   );
 
   return changes.sort(compareChangesNewestFirst);
+}
+
+// With worktree checkouts each change's files live in its own folder, so the main checkout
+// does not see them. Read them from every worktree on a change branch as well.
+async function readChangesWithWorktrees(root: string, activeId?: string): Promise<ChangeSummary[]> {
+  const local = await readChanges(root, activeId);
+  if ((await workspaceCheckoutMode(root)) !== "worktree") {
+    return local;
+  }
+
+  const byId = new Map(local.map((change) => [change.id, change]));
+  for (const worktree of await listGitWorktrees(root)) {
+    const id = worktree.branch?.startsWith("change/") ? worktree.branch.slice("change/".length) : undefined;
+    const changePath = id ? changeDir(worktree.path, id) : undefined;
+    if (!id || !changePath || !(await pathExists(path.join(changePath, "status.yml")))) {
+      continue;
+    }
+    const metadata = await readChangeMetadata(changePath, id);
+    const info = await readLocalChangeInfo(root, id);
+    byId.set(id, {
+      ...metadata,
+      path: path.join("wiki", "changes", metadata.id),
+      changePath,
+      folder: worktree.path,
+      ...(info ? { slot: info.slot } : {}),
+      active: metadata.id === activeId,
+    });
+  }
+  return [...byId.values()].sort(compareChangesNewestFirst);
 }
 
 async function readChangeMetadata(changePath: string, fallbackId: string): Promise<ChangeStatusMetadata> {
@@ -1660,6 +1937,7 @@ async function currentContextForTarget(target: ChangeTarget): Promise<CurrentCha
   const inferred = branch ? inferChangeFromBranch(changes, branch) : undefined;
 
   if (inferred) {
+    const info = (await workspaceCheckoutMode(target.path)) === "worktree" ? await readLocalChangeInfo(target.path, inferred.id) : undefined;
     return {
       id: target.id,
       name: target.name,
@@ -1667,7 +1945,7 @@ async function currentContextForTarget(target: ChangeTarget): Promise<CurrentCha
       source: "branch",
       resolution: "branch_active",
       saved: false,
-      current: { ...inferred, active: true },
+      current: { ...inferred, ...(info ? { folder: target.path, slot: info.slot } : {}), active: true },
       branch,
       branchMatch: "match",
     };
@@ -1759,7 +2037,7 @@ Not ready
 `;
 }
 
-async function ensureChangeBranch(cwd: string, branch: string): Promise<BranchStatus> {
+async function ensureChangeBranch(cwd: string, branch: string, base?: string): Promise<BranchStatus> {
   const gitRoot = await findGitRoot(cwd);
   if (!gitRoot) {
     return "skipped_not_git";
@@ -1776,7 +2054,7 @@ async function ensureChangeBranch(cwd: string, branch: string): Promise<BranchSt
     return "checked_out";
   }
 
-  await gitRequired(["checkout", "-b", branch], gitRoot);
+  await gitRequired(["checkout", "-b", branch, ...(base ? [base] : [])], gitRoot);
   return "created";
 }
 
@@ -1836,6 +2114,8 @@ function summarizeChangeOperation(input: {
   type: ChangeType;
   branch: string;
   autoAdvance: AutoAdvanceFlags;
+  checkout: CheckoutMode;
+  worktrees?: Awaited<ReturnType<typeof ensureChangeWorktrees>>;
   targets: ChangeTargetResult[];
   verb: string;
 }): ChangeOperationResult {
@@ -1847,9 +2127,12 @@ function summarizeChangeOperation(input: {
     `Branch: ${input.branch}`,
     ...formatAutoAdvanceLines(input.autoAdvance),
     "",
-    "Targets:",
-    ...input.targets.map((target) => `  ${target.path} (${formatBranchStatus(target.branchStatus)}, current)`),
   ];
+  if (input.worktrees) {
+    lines.push(...formatWorktreeLines(input.worktrees));
+  } else {
+    lines.push("Targets:", ...input.targets.map((target) => `  ${target.path} (${formatBranchStatus(target.branchStatus)}, current)`));
+  }
 
   return {
     status: "ok",
@@ -1859,9 +2142,36 @@ function summarizeChangeOperation(input: {
     type: input.type,
     branch: input.branch,
     auto_advance: normalizeAutoAdvanceFlags(input.autoAdvance),
+    checkout: input.checkout,
+    ...(input.worktrees
+      ? {
+          folder: input.worktrees.folder,
+          slot: input.worktrees.slot,
+          repos: input.worktrees.repos,
+          copied: input.worktrees.copied,
+          warnings: input.worktrees.warnings,
+        }
+      : {}),
     targets: input.targets,
     message: lines.join("\n"),
   };
+}
+
+function formatWorktreeLines(worktrees: Awaited<ReturnType<typeof ensureChangeWorktrees>>): string[] {
+  return [
+    `Folder: ${worktrees.folder}`,
+    `Slot: ${worktrees.slot}`,
+    "",
+    "Worktrees:",
+    ...worktrees.repos.map((repo) => {
+      const detail = repo.status === "skipped_not_git" ? `skipped: ${repo.reason ?? "not a git repo"}` : repo.status;
+      return `  ${repo.id}  ${repo.path}  ${detail}${repo.base ? ` from ${repo.base}` : ""}`;
+    }),
+    ...(worktrees.copied.length > 0 ? ["", "Copied:", ...worktrees.copied.map((file) => `  ${file}`)] : []),
+    ...(worktrees.warnings.length > 0 ? ["", "Warnings:", ...worktrees.warnings.map((warning) => `  ${warning}`)] : []),
+    "",
+    `Open ${worktrees.folder} in a new session to work on this change.`,
+  ];
 }
 
 function formatListMessage(targets: ChangeTargetSummary[]): string {
@@ -1876,7 +2186,10 @@ function formatListMessage(targets: ChangeTargetSummary[]): string {
         lines.push("  No changes found.");
       } else {
         lines.push(
-          ...target.changes.map((change) => `${change.active ? "*" : " "} ${change.id}  ${change.type}  ${change.stage}  ${change.title}`),
+          ...target.changes.flatMap((change) => [
+            `${change.active ? "*" : " "} ${change.id}  ${change.type}  ${change.stage}  ${change.title}`,
+            ...(change.folder ? [`    folder: ${change.folder}${change.slot ? `  (slot ${change.slot})` : ""}`] : []),
+          ]),
         );
       }
       return lines.join("\n");

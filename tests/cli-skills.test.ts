@@ -252,7 +252,7 @@ describe("skills CLI", () => {
     process.env.WEAVE_SESSION_PATH = sessionPath;
     await createChange({ cwd, title: "Review import", slug: "review-import", randomId: () => "a111", sessionPath });
     await commitAll(cwd, "review import");
-    await createChange({ cwd, title: "Review export", slug: "review-export", randomId: () => "b222", sessionPath });
+    await createChange({ cwd, title: "Review export", slug: "review-export", randomId: () => "b222", base: "HEAD", sessionPath });
     await commitAll(cwd, "review export");
 
     await createProgram().parseAsync(["change", "switch", "review", "--json"], { from: "user" });

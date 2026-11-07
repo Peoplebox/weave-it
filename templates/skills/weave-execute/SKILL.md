@@ -171,6 +171,20 @@ If prepare reports blockers, stop before implementation. State that no selected 
 
 Dirty work already on the expected branch is allowed when prepare succeeds. Dirty work on another branch must be resolved by the user; do not stash, discard, or force-checkout it.
 
+# Set Up Worktrees
+
+When `weave change current --json` shows the change has a `folder` (a worktree checkout), run the workspace's setup commands, such as installing dependencies, before implementing:
+
+```bash
+weave change setup --json
+```
+
+- `ok` or `nothing_to_run`: continue.
+- `needs_approval`: stop. Show the user the commands in `pending_approval` and ask them to run `weave change setup --approve` in a terminal themselves. Weave only runs a setup command after a person approves it, and you must never approve on their behalf.
+- `failed`: stop. Show which repo failed and the end of its log (`failure.output_tail`, `failure.log`).
+
+`WEAVE_SLOT` is the change's slot number. Setup commands can use it to pick ports that do not collide with other changes.
+
 # Check Recorded Decisions
 
 Before implementing, find the recorded decisions (ADRs) that apply to the files the selected tasks will change, and read the accepted ones:

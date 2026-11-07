@@ -352,7 +352,8 @@ describe("changes", () => {
     const session = sessionPath(cwd);
     const first = await createChange({ cwd, title: "First change", now: testNow, randomId: () => "a111", sessionPath: session });
     await commitAll(cwd, "first change");
-    const second = await createChange({ cwd, title: "Second change", now: testNow, randomId: () => "b222", sessionPath: session });
+    // Stacks on the first change on purpose, so both change folders are on this branch.
+    const second = await createChange({ cwd, title: "Second change", now: testNow, randomId: () => "b222", base: "HEAD", sessionPath: session });
     await writeFile(
       session,
       YAML.stringify({
@@ -453,6 +454,8 @@ describe("changes", () => {
       title: "Second change",
       now: testNow,
       randomId: () => "b222",
+      // Stacks on the first change on purpose, so both change folders are on this branch.
+      base: "HEAD",
       sessionPath: session,
     });
     await commitAll(cwd, "second change");

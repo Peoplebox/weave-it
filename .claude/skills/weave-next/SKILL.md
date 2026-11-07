@@ -50,6 +50,12 @@ If no active change exists, stop and say:
 No active Weave change found. Run `weave change new` or `weave change switch`, then run `weave-next` again.
 ```
 
+If the workspace keeps each change in its own folder (the error says so), say instead:
+
+```text
+No active Weave change in this folder. Run `weave change list` to see each change's folder, open the one you want in a new session, and run `weave-next` there.
+```
+
 # Scope
 
 Inspect only the resolved workspace or repo context whose current change matches the active change.

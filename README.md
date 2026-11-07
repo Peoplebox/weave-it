@@ -428,6 +428,8 @@ weave change status [change] [options]
 weave change progress <lane> [options]
 weave change clear-stale <lane> [options]
 weave change switch <change> [options]
+weave change setup [--approve] [options]
+weave change close [change] [options]
 weave change knowledge <status> [options]
 weave change verdict <lane> <verdict> [options]
 weave change auto-advance [transition] [on|off] [options]
@@ -456,8 +458,53 @@ Options for `new`:
 ```text
 --type <type>          change type: feat, fix, refactor, docs, test, ci, or chore; defaults to feat
 --slug <slug>          change slug override
+--repo <id>            worktree checkouts: only create worktrees for this registered repo (repeatable)
+--base <ref>           ref the change branch starts from, or <repo>=<ref> for one repo (repeatable);
+                       defaults to the remote default branch
+--no-fetch             worktree checkouts: do not fetch the base branch first
 --json                 print machine-readable JSON
 ```
+
+### Worktree checkouts
+
+`.weave/workspace.yml` decides how a change is checked out:
+
+- `checkout: worktree` (the default for new workspaces): each change gets its own folder, next to the main checkout, holding a git worktree of the workspace root and of every registered repo, all on `change/<change-id>`. Your existing checkouts never switch branches, so several changes can be worked on at once.
+- `checkout: in-place` (what workspaces created before worktrees get): the current checkout switches to the change branch.
+
+```text
+~/work/acme/                       your main checkouts, left alone
+~/work/acme.changes/
+  261107-a1b2-login/               workspace root on change/261107-a1b2-login
+    wiki/changes/261107-a1b2-login/
+    api/                           api on change/261107-a1b2-login
+    web/                           web on change/261107-a1b2-login
+```
+
+`weave change new` fetches each repo's remote default branch and starts the change from it. To start somewhere else, the most specific setting wins: `--base api=feature/x` for one repo (`root` is the workspace root), then `--base feature/x` for every repo, then a repo's `base` in `.weave/workspace.yml`. A plain branch name means your local branch when you have one, and otherwise the branch of that name on `origin`, fetched first; `origin/<branch>` always means the freshly fetched remote branch. If a repo does not have the branch you named, nothing is created and the error says which repo, so you can give it its own `--base`. Every check runs first, so a problem in any repo stops it before anything is created, and if a step fails partway it removes the worktrees and branches that run created. The workspace root's `.weave/workspace.yml` must be committed on the base branch, or the new folder would not be a Weave workspace.
+
+Open the printed folder in a new session to work on the change. `weave change list` shows every change folder from any checkout, `weave change switch <change>` prints where a change's folder is and creates it if it is missing. That includes a change that only exists as a `change/<id>` branch, such as a teammate's pushed change or one you closed earlier: it matches the id, token, or slug against change branches locally and on `origin`, fetches them, and gives every repo that has the branch a worktree tracking it (the others start fresh from their base), and `weave task prepare` adds worktrees for repos the change does not have yet without moving any checkout.
+
+```yaml
+checkout: worktree
+worktrees:
+  root: ../acme.changes      # optional; where change folders go, relative to the main checkout
+  copy: [.env]               # ignored files copied from the main checkout into the root worktree
+  setup: npm ci              # command `weave change setup` runs in the root worktree
+repos:
+  api:
+    path: api
+    kind: app
+    base: origin/develop     # optional; where api's change branches start
+    copy: [.env, .env.local]
+    setup: npm ci && npm run db:migrate
+```
+
+`copy` lists literal paths, copied when a worktree is created. `weave change setup` runs each worktree's `setup` once, at the first `weave-execute`, so planning never waits on installs. It only runs a command after a person approves that exact command with `weave change setup --approve` in a terminal, and the approval is remembered on that machine. Agents and auto-advance cannot approve, so a new or changed command always waits for you. Commands get `WEAVE_CHANGE_ID`, `WEAVE_CHANGE_DIR`, `WEAVE_REPO_ID`, `WEAVE_SOURCE_DIR` and `WEAVE_SLOT`. The slot is a small number unique among open changes on the machine, which a setup command can turn into ports, for example `PORT=$((3000 + WEAVE_SLOT * 10))`.
+
+`weave change close [change]` removes the change's worktrees once they have no uncommitted work, run from outside the change folder. It keeps every branch and says which ones are not on `origin`, so closing never deletes commits. Slots, setup approvals and logs live in `.git/weave/` of the main checkout and are never committed.
+
+Worktree checkouts need macOS or Linux for now. With `in-place` checkouts, `weave change new` refuses to start on top of another change branch unless you pass `--base`, and `weave task prepare` refuses a repo that sits on an unrelated branch, and switches back the repos it already moved if a later one fails.
 
 Options for `list`, `current`, `status`, and `switch`:
 
@@ -513,7 +560,7 @@ From source:
 npm run dev -- change new "Analytics of reviews"
 ```
 
-`weave change list` is a clean index and marks the active change with `*`. `weave change current` shows the active change from the checked-out branch. `weave change status` reports metadata and branch alignment. `weave change switch` is the explicit way to move to another existing change.
+`weave change list` is a clean index and marks the active change with `*`. `weave change current` shows the active change from the checked-out branch. `weave change status` reports metadata and branch alignment. `weave change switch` is the explicit way to move to another existing change; with worktree checkouts it prints the change's folder instead of switching branches.
 
 `weave change progress <lane>` records lifecycle progress for the active change. `stage` is orientation for the furthest progressed lane; it does not prove skipped upstream artifacts were created. `artifacts` records the source graph used for stale invalidation:
 

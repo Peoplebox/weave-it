@@ -35,11 +35,17 @@ Use `--type <type>` when the work is not a new capability. Supported values are 
 
 Use `--slug <slug>` only when the user requested a specific folder or branch slug.
 
-4. Report the change id, resolved workspace/repo context, branch status, and that the new change is now current.
+Use `--repo <id>` (repeatable) only when the user says the change touches just some registered repos. Use `--base <ref>` only when the user asks to start from a specific branch. When only some repos should start there, pass it per repo, for example `--base api=feature/x` (`root` is the workspace root); other repos then start from their default branch.
+
+4. Report the change id and branch. What comes next depends on the result's `checkout`:
+   - `worktree`: the change has its own folder (`folder` in the result), with a worktree per repo on the change branch. The user's current checkout did not move. Tell the user to open that folder in a new session and run the next skill there. Do not keep working on the change from this session, because this session's files are not the change's files.
+   - `in-place`: the current checkout switched to the change branch, and the new change is current here.
+
+If the command fails with `worktree_blocked` or `stacked_change`, nothing was created. Show the user the reasons it gives and stop.
 
 # Behavior Rules
 
-- The CLI owns change id generation, folder creation, status metadata, and git branch creation.
+- The CLI owns change id generation, folder creation, worktrees, status metadata, and git branch creation. Never run `git worktree` or `git checkout` yourself for this.
 - The created branch is `change/{change-id}`.
 - Do not create `prd.md`.
 - For `feat` changes, the CLI scaffolds `exploration.md` and starts at `stage: exploration`; treat `exploration.md` as the first artifact.

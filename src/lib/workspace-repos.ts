@@ -11,12 +11,32 @@ export type WorkspaceRepoEntry = {
   path: string;
   kind: string;
   remote?: string;
+  // Worktree settings for this repo: the ref new change branches start from, ignored
+  // files to copy in from the main checkout, and the command `weave change setup` runs.
+  base?: string;
+  copy?: string[];
+  setup?: string;
+};
+
+// `worktree` gives each change its own folder of git worktrees; `in-place` switches
+// branches in the existing checkouts. Workspaces without the key predate worktrees.
+export type CheckoutMode = "worktree" | "in-place";
+
+export type WorktreeSettings = {
+  // Folder that holds one subfolder per change, relative to the main checkout.
+  root?: string;
+  // Apply to the workspace root (or the repo itself in repo mode).
+  base?: string;
+  copy: string[];
+  setup?: string;
 };
 
 export type WorkspaceMetadata = {
   version?: number;
   mode?: string;
   name?: string;
+  checkout: CheckoutMode;
+  worktrees: WorktreeSettings;
   repos: Record<string, WorkspaceRepoEntry>;
 };
 
@@ -74,11 +94,30 @@ export async function readWorkspaceMetadata(workspacePath: string): Promise<Work
       version: typeof parsed.version === "number" ? parsed.version : undefined,
       mode: typeof parsed.mode === "string" ? parsed.mode : undefined,
       name: typeof parsed.name === "string" ? parsed.name : undefined,
+      checkout: parsed.checkout === "worktree" ? "worktree" : "in-place",
+      worktrees: parseWorktreeSettings(parsed.worktrees),
       repos,
     };
   } catch {
     return undefined;
   }
+}
+
+function parseWorktreeSettings(value: unknown): WorktreeSettings {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    ...(typeof record.root === "string" && record.root.trim() ? { root: record.root.trim() } : {}),
+    ...(typeof record.base === "string" && record.base.trim() ? { base: record.base.trim() } : {}),
+    copy: parseCopyList(record.copy),
+    ...(typeof record.setup === "string" && record.setup.trim() ? { setup: record.setup.trim() } : {}),
+  };
+}
+
+function parseCopyList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))];
 }
 
 function parseRepos(value: unknown): Record<string, WorkspaceRepoEntry> {
@@ -97,10 +136,14 @@ function parseRepos(value: unknown): Record<string, WorkspaceRepoEntry> {
     if (!repoPath || !kind) {
       continue;
     }
+    const copy = parseCopyList(record.copy);
     repos[id] = {
       path: repoPath,
       kind,
       ...(typeof record.remote === "string" ? { remote: record.remote } : {}),
+      ...(typeof record.base === "string" && record.base.trim() ? { base: record.base.trim() } : {}),
+      ...(copy.length > 0 ? { copy } : {}),
+      ...(typeof record.setup === "string" && record.setup.trim() ? { setup: record.setup.trim() } : {}),
     };
   }
   return repos;
@@ -142,8 +185,14 @@ export async function registerRepoInWorkspaceMetadata(
     version: 1,
     mode: "workspace",
     name: path.basename(workspacePath),
+    checkout: "in-place",
+    worktrees: { copy: [] },
     repos: {},
   };
+  // Keep keys this function does not manage, such as `checkout` and `worktrees`.
+  const raw = (await pathExists(workspaceYmlPath))
+    ? ((YAML.parse(await readFile(workspaceYmlPath, "utf8")) as Record<string, unknown> | null) ?? {})
+    : {};
 
   const normalizedPath = normalizeRepoPath(input.relativePath);
   const existing = metadata.repos[input.id];
@@ -160,7 +209,10 @@ export async function registerRepoInWorkspaceMetadata(
     throw new Error(`Path is already registered in workspace as "${collision[0]}".`);
   }
 
-  metadata.repos[input.id] = {
+  const rawRepos = raw.repos && typeof raw.repos === "object" ? (raw.repos as Record<string, unknown>) : {};
+  const rawExisting = rawRepos[input.id] && typeof rawRepos[input.id] === "object" ? (rawRepos[input.id] as Record<string, unknown>) : {};
+  rawRepos[input.id] = {
+    ...rawExisting,
     path: normalizedPath,
     kind: input.kind,
     ...(input.remote ? { remote: input.remote } : {}),
@@ -169,10 +221,11 @@ export async function registerRepoInWorkspaceMetadata(
   await writeFile(
     workspaceYmlPath,
     YAML.stringify({
+      ...raw,
       version: metadata.version ?? 1,
       mode: metadata.mode ?? "workspace",
       name: metadata.name ?? path.basename(workspacePath),
-      repos: metadata.repos,
+      repos: rawRepos,
     }),
   );
 }

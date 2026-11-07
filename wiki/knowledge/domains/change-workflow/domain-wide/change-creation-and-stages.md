@@ -9,7 +9,7 @@ Define the current behavior of `weave change new` scaffolding and the change `st
 `weave change new "<title>" [--type <type>] [--slug <slug>]` creates one change in the cwd-dispatched Weave context:
 
 - Generates the change id, creates `wiki/changes/<change-id>/`, writes `status.yml`, and creates an empty `sessions/` directory.
-- Requires a git repo and ensures/checks out the change branch `change/<change-id>`.
+- Requires a git repo and creates the change branch `change/<change-id>`. With `checkout: worktree` it creates a change folder of worktrees and writes the change files there; with `checkout: in-place` it checks the branch out in the current checkout. See [change-checkouts](change-checkouts.md).
 - Does not record local active change or artifact lane state; the active change is derived from the checked-out branch.
 
 Weave resolves the context by walking up from `cwd` to `.weave/workspace.yml`. In workspace mode, the workspace root owns the change store even when the command runs inside a registered sub-repo. In repo mode, nested directories resolve to the repo root. `weave change new` no longer accepts `--target` and does not create changes across multiple targets.

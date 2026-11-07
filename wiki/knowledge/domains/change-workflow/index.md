@@ -25,6 +25,7 @@ Sliced changes store work under `task-slices/<NN>-<slug>/`; legacy flat changes 
 
 ## Domain-Wide Behavior
 
+- [change-checkouts](domain-wide/change-checkouts.md): worktree checkouts (a folder of worktrees per change, base branches, copy, approved setup, slots, close) and the in-place branch-switching safeguards.
 - [change-creation-and-stages](domain-wide/change-creation-and-stages.md): `weave change new` scaffolding (feature vs non-feature), the `stage` vocabulary, and the non-lane `started` stage used by non-feature changes.
 - [architecture-artifacts](domain-wide/architecture-artifacts.md): legacy `architecture.md` and folder-mode `architecture/index.md` plus facet files, including shape resolution, conflict handling, and lane-atomic lifecycle behavior.
 - [lifecycle-progress-and-staleness](domain-wide/lifecycle-progress-and-staleness.md): `weave change progress` semantics, the default pessimistic stale propagation, CLI levers (`--no-invalidate`, `--invalidate`), explicit `weave change clear-stale`, the `stale_history` audit trail, and the agent-side verification protocol embedded in every progress-calling skill.
