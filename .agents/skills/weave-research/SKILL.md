@@ -14,7 +14,7 @@ Write `wiki/changes/<change-id>/research.md`: a factual map of the system as it 
 
 Your only job is to document what exists, where it lives, how it works, and how it is tested. Do not suggest improvements, critique the code, find root causes, or propose designs unless the user explicitly asks. Later lanes (`weave-explore`, `weave-prd`, `weave-architect`) make decisions; they rely on this document being objective.
 
-Research only reads. The one file it writes is `research.md`, and it writes it with the agent's file write or edit tool, never through shell commands. Do not edit any other file, create scratch scripts, or run experiments to see how something behaves; describe what the code and its tests show, and leave anything only a run could settle under **Open Questions**. Weave allows exactly these writes without asking, so a permission prompt during research means you have stepped outside this job.
+Investigate however the questions need: read code, tests, and docs, look things up on the web, and when reading cannot settle how something behaves, run a quick check (a command, or a throwaway script in a temporary folder outside the repo) and report what you observed. Leave the project as you found it: the one file research adds is `research.md`, written with the agent's file write or edit tool rather than through shell commands, and nothing in the repo is edited.
 
 # Resolve Context
 
@@ -34,7 +34,7 @@ In workspace mode, `workspace.path` is the only artifact root. Registered `repos
 
 # Read the Questions, and Only the Questions
 
-Read `wiki/changes/<change-id>/questions.md` in full. It is the research brief.
+Read `wiki/changes/<change-id>/questions.md` in full. It is the research brief. Then read in full any file it names directly, before starting sub-agents, so you can split the work well.
 
 Do not read `exploration.md`, `prd.md`, `findings.md`, `architecture/`, `sessions/`, or tickets for the change unless the user explicitly asks. Those describe what the change wants; reading them pulls the research toward the planned answer.
 
@@ -87,7 +87,11 @@ Write the file to `wiki/changes/<change-id>/research.md` under the resolved arti
 
 # Close Open Questions Once
 
-If the document has open questions, run one more targeted round of sub-agents to answer them. Update the relevant sections in place and remove questions that now have answers. Do not do a third round; leave what remains under **Open Questions**.
+If the document has open questions, run one more targeted round of sub-agents, or a quick check, to answer them. Update the relevant sections in place and remove questions that now have answers. Do not do a third round; leave what remains under **Open Questions**.
+
+# Follow-Up Questions
+
+When the user asks more after `research.md` exists, research the new question the same way and add a `## Follow-Up: <question>` section with the date, rather than rewriting the document. Update **Summary** and **Code References** if the answer changes them, then record progress again.
 
 # Record Progress
 

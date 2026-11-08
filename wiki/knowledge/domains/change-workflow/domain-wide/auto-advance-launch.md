@@ -8,11 +8,11 @@ Define how `weave advance` starts the next lifecycle phase, how a run is finishe
 
 `weave advance` starts a phase only when its transition's conditions hold (see the README's auto-advance section). How it starts comes from `--launch`, then `advance.launch` in `.weave/workspace.yml`, then `handoff`. `--detach` alone means `background`.
 
-- `handoff` (default): Weave starts no agent. Under the advance lock it records a run with `launch: handoff` and returns `steps[0].handoff`: `run_id`, `skill`, `lane`, `change_id`, `folder`, `skill_files` (installed copies of the skill under `.claude/skills`, `.agents/skills`, or `.opencode/commands`), and a self-contained `brief`. The brief names the skill and change, the folder, the skill files to read when the agent cannot load skills by name, says there is no earlier conversation to rely on, limits writes to `wiki/changes/<change-id>/` (no source edits, scratch scripts, or experiments), and says recording progress completes the run. The run's `agent` is `claude` inside Claude Code (`CLAUDECODE=1`), `--agent` when given, and `calling-agent` otherwise. A dry run says it would hand the phase to a fresh sub-agent.
+- `handoff` (default): Weave starts no agent. Under the advance lock it records a run with `launch: handoff` and returns `steps[0].handoff`: `run_id`, `skill`, `lane`, `change_id`, `folder`, `skill_files` (installed copies of the skill under `.claude/skills`, `.agents/skills`, or `.opencode/commands`), and a self-contained `brief`. The brief names the skill and change, the folder, the skill files to read when the agent cannot load skills by name, says there is no earlier conversation to rely on, says what the phase produces goes in `wiki/changes/<change-id>/` and the rest of the project stays as it was, and says recording progress completes the run. The run's `agent` is `claude` inside Claude Code (`CLAUDECODE=1`), `--agent` when given, and `calling-agent` otherwise. A dry run says it would hand the phase to a fresh sub-agent.
 - `here`, `terminal`, `background`: Weave starts the session itself. These need an agent someone chose: `--agent`, `advance.agent`, or an `advance.command` template, where `{prompt}` is replaced by the shell-quoted prompt (agent name `custom`). Without one they fail with `missing_launch_agent`; an unknown agent name fails with `unsupported_launch_agent`.
   - `here`: an interactive session in the current terminal; Weave waits for it to end, then records the run.
   - `terminal`: the same session in a new terminal, returning at once. Openers are tried in order: herdr (`HC_TERMINAL_ID` set and `herdr-app` on `PATH`; `herdr-app do tab.new`), tmux (`TMUX` set; `tmux new-window -d`), iTerm2 (`TERM_PROGRAM=iTerm.app`), and Terminal.app on macOS. None is a Weave dependency. The terminal runs the session followed by `weave advance --finish-run <run-id>`. The terminal opens before the run is recorded, so one that fails to open (`no_terminal`) leaves no run behind.
-  - `background`: a headless session. For Claude, `--permission-mode acceptEdits` (unless `--permission-mode` is given), `--output-format stream-json --verbose`, and `--allowedTools` limited to `weave`, read-only `git`, and `ls`. From an agent (no terminal) it is detached; from a terminal it runs in place.
+  - `background`: a headless session. For Claude, `--permission-mode acceptEdits` (unless `--permission-mode` is given), `--output-format stream-json --verbose`, and `--allowedTools` limited to web lookups, `weave`, read-only `git`, and `ls`. From an agent (no terminal) it is detached; from a terminal it runs in place.
 
 ## Runs
 
@@ -23,7 +23,7 @@ Define how `weave advance` starts the next lifecycle phase, how a run is finishe
 
 ## Phase Permissions
 
-`weave agent install` and `weave agent update`, when they target Claude Code, add any missing rules from this list to `.claude/settings.json` `permissions.allow`, keeping every other setting and rule: `Edit(/wiki/changes/**)`, `Bash(weave *)`, `Bash(git log *)`, `Bash(git show *)`, `Bash(git diff *)`, `Bash(git status *)`, `Bash(git ls-files *)`. The summary names the rules it added. Other agents' permission formats are documented in the README, not written.
+`weave agent install` and `weave agent update`, when they target Claude Code, add any missing rules from this list to `.claude/settings.json` `permissions.allow`, keeping every other setting and rule: `Edit(/wiki/changes/**)`, `WebSearch`, `WebFetch`, `Bash(weave *)`, `Bash(git log *)`, `Bash(git show *)`, `Bash(git diff *)`, `Bash(git status *)`, `Bash(git ls-files *)`. The summary names the rules it added. Other agents' permission formats are documented in the README, not written.
 
 ## Watching A Run
 
@@ -33,7 +33,7 @@ Define how `weave advance` starts the next lifecycle phase, how a run is finishe
 ## Integrations And Side Effects
 
 - `weave-questions` calls `weave advance --transition questions_to_research --json`. On a handoff it starts one fresh, foreground sub-agent with exactly the brief, waits for it, then runs `weave advance --finish-run <run-id> --launch handoff --once --json`. Without sub-agents it gives the person the brief for a new session.
-- `weave-research` writes only `research.md`, with the file tools, and runs no experiments.
+- `weave-research` investigates freely (code, tests, docs, web lookups, and quick checks in a temporary folder outside the repo), adds only `research.md` (written with the file tools), edits nothing else in the repo, reads files named in `questions.md` first, and answers follow-up questions in dated `## Follow-Up` sections.
 - `weave-next` reports a running phase with where it runs and never recommends starting it again.
 - Decision: [261108-4z8l-auto-advance-hands-phases-to-the-calling-agent](../../../../decisions/261108-hndf-auto-advance-hands-phases-to-the-calling-agent.md).
 

@@ -558,7 +558,7 @@ describe("handoff", () => {
     expect(launcher.launches).toEqual([]);
     expect(step.run).toMatchObject({ launch: "handoff", agent: "claude", result: "running" });
     expect(step.handoff).toMatchObject({ run_id: step.run!.id, skill: "weave-research", change_id: changeId, skill_files: [] });
-    expect(step.handoff!.brief).toContain(`Write only inside wiki/changes/${changeId}/`);
+    expect(step.handoff!.brief).toContain(`What this phase produces goes in wiki/changes/${changeId}/`);
     expect(step.handoff!.brief).toContain(`That also completes Weave run ${step.run!.id}.`);
     expect(result.message).toContain("Start it as a fresh sub-agent, not a fork of this conversation");
   });

@@ -2,11 +2,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathExists } from "./files.js";
 
-// What every Weave phase needs without asking: writing its own change files and running
-// `weave` plus read-only git. Anything else, such as editing source code or running other
-// commands, still asks the person, so a prompt during research means it left its job.
+// What every Weave phase needs without asking: writing its own change files, running `weave`
+// and read-only git, and looking things up on the web (research checks library and API docs).
+// Anything else, such as editing source code or running other commands, still asks.
 export const claudePhaseAllowRules = [
   "Edit(/wiki/changes/**)",
+  "WebSearch",
+  "WebFetch",
   "Bash(weave *)",
   "Bash(git log *)",
   "Bash(git show *)",

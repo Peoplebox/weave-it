@@ -337,8 +337,8 @@ export function phaseBrief(input: { skill: string; lane: ChangeStage; changeId: 
     input.skillFiles.length > 0
       ? `If you cannot load the skill by name, read its instructions from ${input.skillFiles.join(" or ")} and follow them exactly.`
       : `Load the ${input.skill} skill by name and follow its instructions exactly.`,
-    "Use only what is written in the change folder and the code. There is no earlier conversation to rely on.",
-    `Write only inside wiki/changes/${input.changeId}/, and change nothing else: no source edits, no scratch scripts, no experiments.`,
+    "Use only what is written in the change folder, the code, and what you look up. There is no earlier conversation to rely on.",
+    `What this phase produces goes in wiki/changes/${input.changeId}/; leave the rest of the project as you found it.`,
     `Finish the way the skill says, with \`weave change progress ${input.lane}\`. That also completes Weave run ${input.runId}.`,
   ].join("\n");
 }

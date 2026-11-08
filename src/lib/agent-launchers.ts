@@ -37,8 +37,10 @@ export interface AgentLauncher {
 }
 
 // A background session has nobody to approve tool use, so it gets file edits inside the
-// change folder plus the commands a Weave phase needs, and nothing else.
+// change folder, web lookups, and the commands a Weave phase needs.
 export const backgroundAllowedTools = [
+  "WebSearch",
+  "WebFetch",
   "Bash(weave *)",
   "Bash(git log *)",
   "Bash(git show *)",
