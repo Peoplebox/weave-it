@@ -297,6 +297,9 @@ describe("agent skills", () => {
     expect(skill.content).toContain("Optional Checkpoint");
     expect(skill.content).toContain("weave advance --dry-run --json");
     expect(skill.content).toContain("Run `weave advance` only with `--dry-run`; never start a phase from this skill.");
+    expect(skill.content).toContain("run `weave change list --fetch --json`");
+    expect(skill.content).toContain("Decide from `state.id` and label `id`s, never from `state.label` or label text");
+    expect(skill.content).toContain("Never treat `landed_with_newer_commits` as safe to close or delete");
     expect(skill.content).not.toContain("Before writing the live artifact, inspect pending session notes for the selected lane");
     expect(skill.sourcePath).toContain(path.join("templates", "skills", "weave-next", "SKILL.md"));
     expect(skill.hash).toMatch(/^sha256:[a-f0-9]{64}$/);

@@ -52,7 +52,10 @@ import {
 } from "../lib/changes.js";
 import { runLogPath } from "../lib/advance.js";
 import { printRunLog } from "../lib/run-log.js";
+import { joinOrRunRefresh, planBackgroundRefresh, readRemoteFacts, runRefresh, spawnBackgroundRefresh } from "../lib/change-refresh.js";
 import { withNotices } from "../lib/with-notices.js";
+import { findWorkspaceMode } from "../lib/workspace-mode.js";
+import { workspaceCheckoutMode } from "../lib/worktrees.js";
 import type { SetupCommand, SetupResult } from "../lib/worktrees.js";
 
 interface ChangeNewOptions {
@@ -156,15 +159,44 @@ export function changeCommand(): Command {
 
   command
     .command("list")
-    .description("List changes.")
+    .description("List changes, with each change's state and next step.")
+    .option("--all", "include past changes whose work has landed")
+    .option("--fetch", "wait for a fresh look at the remote before answering")
     .option("--json", "print machine-readable JSON")
-    .action(async (options: ChangeTargetOptions) => {
+    .action(async (options: ChangeTargetOptions & { all?: boolean; fetch?: boolean }) => {
       await runAction(options.json ?? false, async () => {
-        const result = await listChanges({
-          cwd: process.cwd(),
-        });
+        const cwd = process.cwd();
+        // Remote facts come from a background refresh in worktree mode only; in-place
+        // checkouts list exactly as before.
+        const worktreeMode = await usesChangeFolders(cwd);
+        let finished: boolean | undefined;
+        if (worktreeMode && options.fetch) {
+          finished = await joinOrRunRefresh(cwd);
+        }
+        const plan = worktreeMode && !options.fetch ? await planBackgroundRefresh(cwd) : { refreshing: false, spawn: false };
+        const refresh = worktreeMode
+          ? { record: (await readRemoteFacts(cwd)).record, refreshing: plan.refreshing, ...(finished !== undefined ? { finished } : {}) }
+          : undefined;
+        const result = await listChanges({ cwd, all: options.all ?? false, ...(refresh ? { refresh } : {}) });
         writeResult(result, options.json ?? false);
+        if (plan.spawn) {
+          await spawnBackgroundRefresh(cwd);
+        }
       });
+    });
+
+  command
+    .command("refresh", { hidden: true })
+    .description("Refresh remote facts for `weave change list` (started in the background by list).")
+    .requiredOption("--root <path>", "the main checkout")
+    .action(async (options: { root: string }) => {
+      // Results are only recorded in refresh.json; this never fails loudly.
+      try {
+        await runRefresh(options.root, { throttle: false });
+      } catch {
+        // Nothing to report to: the next list shows the last recorded result.
+      }
+      process.exitCode = 0;
     });
 
   command
@@ -582,6 +614,11 @@ function writeResult(
   }
 
   process.stdout.write(`${result.message}\n`);
+}
+
+async function usesChangeFolders(cwd: string): Promise<boolean> {
+  const found = await findWorkspaceMode(cwd).catch(() => undefined);
+  return found ? (await workspaceCheckoutMode(found.workspacePath)) === "worktree" : false;
 }
 
 export async function runAction(json: boolean, action: () => Promise<void>): Promise<void> {

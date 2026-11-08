@@ -1,9 +1,12 @@
-import { spawnSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { execFile, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import { installAgentSkills } from "../src/lib/agent-skills.js";
+import { createChange } from "../src/lib/changes.js";
 
 const projectRoot = path.resolve(__dirname, "..");
 const cliEntry = path.resolve(projectRoot, "src", "cli.ts");
@@ -108,4 +111,74 @@ describe("weave status", () => {
     const parsed = JSON.parse(result.stdout);
     expect(parsed.notices).toEqual([]);
   });
+});
+
+describe("weave status attention line", () => {
+  const execFileAsync = promisify(execFile);
+  const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" };
+  const git = (cwd: string, args: string[]) => execFileAsync("git", args, { cwd, env: gitEnv }).then(({ stdout }) => stdout.trim());
+
+  async function worktreeRepo(checkout: "worktree" | "in-place" = "worktree"): Promise<{ repo: string; folder: string }> {
+    const base = await realpath(await mkdtemp(path.join(os.tmpdir(), "weave-status-attn-")));
+    const origin = path.join(base, "app.git");
+    await mkdir(origin);
+    await git(origin, ["init", "-q", "--bare", "-b", "main"]);
+    const repo = path.join(base, "app");
+    await git(base, ["clone", "--quiet", origin, repo]);
+    await mkdir(path.join(repo, ".weave"));
+    await writeFile(path.join(repo, ".weave", "workspace.yml"), YAML.stringify({ version: 1, mode: "repo", name: "app", checkout, repos: {} }));
+    await git(repo, ["add", "."]);
+    await git(repo, ["commit", "-q", "-m", "weave"]);
+    await git(repo, ["push", "-q", "-u", "origin", "main"]);
+    const created = await createChange({ cwd: repo, title: "Login", randomId: () => "a1b2", sessionPath: path.join(base, "session.yml") });
+    return { repo, folder: created.folder ?? repo };
+  }
+
+  async function writeSnapshot(repo: string, counts: Record<string, number>): Promise<void> {
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    await mkdir(path.join(repo, ".git", "weave"), { recursive: true });
+    await writeFile(
+      path.join(repo, ".git", "weave", "attention.json"),
+      JSON.stringify({ version: 1, computed_at: "2026-11-08T10:00:00.000Z", facts_at: "2026-11-08T10:00:00.000Z", total, counts }),
+    );
+  }
+
+  it("shows the count with each state, the same from the main checkout, a change folder, and a subfolder", async () => {
+    const { repo, folder } = await worktreeRepo();
+    await writeSnapshot(repo, { landed: 1, folder_missing: 1 });
+    const sub = path.join(folder, "wiki");
+
+    for (const cwd of [repo, folder, sub]) {
+      const result = runCli(["status"], cwd, { WEAVE_NO_NOTICES: "1" });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("2 changes need attention (1 landed, 1 folder missing). Run 'weave change list'.");
+    }
+    const json = JSON.parse(runCli(["status", "--json"], folder, { WEAVE_NO_NOTICES: "1" }).stdout);
+    expect(json.changes_attention).toEqual({ total: 2, counts: { landed: 1, folder_missing: 1 }, computed_at: "2026-11-08T10:00:00.000Z" });
+  }, 60_000);
+
+  it("leaves out zero counts and uses the singular", async () => {
+    const { repo } = await worktreeRepo();
+    await writeSnapshot(repo, { landed: 1 });
+
+    expect(runCli(["status"], repo, { WEAVE_NO_NOTICES: "1" }).stdout).toContain("1 change needs attention (1 landed). Run 'weave change list'.");
+  }, 30_000);
+
+  it("adds nothing when nothing needs attention or nothing has been worked out", async () => {
+    const { repo } = await worktreeRepo();
+    const before = runCli(["status", "--json"], repo, { WEAVE_NO_NOTICES: "1" });
+    expect(JSON.parse(before.stdout).changes_attention).toBeNull();
+    expect(runCli(["status"], repo, { WEAVE_NO_NOTICES: "1" }).stdout).not.toContain("need attention");
+
+    await writeSnapshot(repo, {});
+    expect(runCli(["status"], repo, { WEAVE_NO_NOTICES: "1" }).stdout).not.toContain("need attention");
+  }, 30_000);
+
+  it("stays out of in-place repos", async () => {
+    const { repo } = await worktreeRepo("in-place");
+    await writeSnapshot(repo, { landed: 1 });
+
+    const json = JSON.parse(runCli(["status", "--json"], repo, { WEAVE_NO_NOTICES: "1" }).stdout);
+    expect(json.changes_attention).toBeNull();
+  }, 30_000);
 });

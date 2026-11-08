@@ -1,0 +1,133 @@
+version: 1
+id: 261107-4oq6-flag-stale-change-folders-in-weave
+slug: flag-stale-change-folders-in-weave
+title: Flag stale change folders in weave status
+type: feat
+stage: slices
+branch: change/261107-4oq6-flag-stale-change-folders-in-weave
+auto_advance:
+  questions_to_research: true
+  findings_to_questions: false
+created_at: 2026-11-07T11:22:53.092Z
+updated_at: 2026-11-08T18:44:47.549Z
+checkout:
+  mode: worktree
+  repos:
+    root:
+      path: .
+      base: origin/change/worktrees
+      base_commit: 0a2d3e82ac305032a2aa0add6bcd0614a5f4b782
+artifacts:
+  questions:
+    sources:
+      - discussion
+    updated_at: 2026-11-07T11:36:15.874Z
+  research:
+    sources:
+      - questions
+      - codebase
+    updated_at: 2026-11-08T13:05:13.420Z
+  exploration:
+    sources:
+      - discussion
+      - research
+    updated_at: 2026-11-08T13:05:13.592Z
+  prd:
+    sources:
+      - exploration
+      - sessions
+      - research
+      - discussion
+    updated_at: 2026-11-08T13:48:11.207Z
+  architecture:
+    sources:
+      - prd
+      - research
+      - codebase
+      - discussion
+    updated_at: 2026-11-08T14:23:14.227Z
+  slices:
+    sources:
+      - architecture
+    updated_at: 2026-11-08T14:27:35.095Z
+runs:
+  - id: research-20261107T113616-pa6c
+    lane: research
+    skill: weave-research
+    agent: claude
+    session_id: 60990805-7891-4029-ac28-07f903d94668
+    trigger: auto-advance
+    transition: questions_to_research
+    upstream_updated_at: 2026-11-07T11:36:15.874Z
+    started_at: 2026-11-07T11:36:16.206Z
+    finished_at: 2026-11-07T11:58:02.129Z
+    result: failed
+  - id: research-20261107T144414-8t8p
+    lane: research
+    skill: weave-research
+    agent: claude
+    session_id: 4017d63a-5338-47f2-bc6f-1b7a8c8e391a
+    trigger: auto-advance
+    transition: questions_to_research
+    upstream_updated_at: 2026-11-07T11:36:15.874Z
+    started_at: 2026-11-07T14:44:14.409Z
+    finished_at: 2026-11-07T15:16:50.080Z
+    result: incomplete
+  - id: research-20261108T063455-6rpq
+    lane: research
+    skill: weave-research
+    agent: claude
+    session_id: 65f675b2-08d8-45c8-b535-f3b8e85810ee
+    trigger: auto-advance
+    transition: questions_to_research
+    upstream_updated_at: 2026-11-07T11:36:15.874Z
+    launch: background
+    started_at: 2026-11-08T06:34:55.087Z
+    finished_at: 2026-11-08T06:43:31.384Z
+    result: succeeded
+stress_tests:
+  exploration:
+    verdict: holds-with-changes
+    judged_at: 2026-11-08T13:05:13.755Z
+    artifact_updated_at: 2026-11-08T13:05:13.592Z
+    session: wiki/changes/261107-4oq6-flag-stale-change-folders-in-weave/sessions/20261108-183313-rtfn-exploration-stress-test.md
+    reason: Direction stands; short re-test settled scope wording, starting-branch
+      memory, refresh limits, the safe-to-delete rule, layout, and JSON
+      compatibility.
+  architecture:
+    verdict: holds-with-changes
+    judged_at: 2026-11-08T14:23:14.401Z
+    artifact_updated_at: 2026-11-08T14:23:14.227Z
+    session: wiki/changes/261107-4oq6-flag-stale-change-folders-in-weave/sessions/20261108-195239-q7vd-architecture-stress-test.md
+    reason: Approach A and both proposed decisions stand; landed algorithm, base
+      recovery, fetch scope and hygiene, and several contracts were corrected.
+execution:
+  version: 1
+  branch: change/261107-4oq6-flag-stale-change-folders-in-weave
+  repos:
+    root:
+      path: .
+      mode: repo
+      branch: change/261107-4oq6-flag-stale-change-folders-in-weave
+      state: prepared
+      branch_status: already_active
+      prepared_head: 0a2d3e82ac305032a2aa0add6bcd0614a5f4b782
+      prepared_at: 2026-11-08T14:29:03.940Z
+      verified_at: 2026-11-08T14:29:03.940Z
+knowledge:
+  status: updated
+  updated_at: 2026-11-08T18:44:47.549Z
+  domains:
+    - change-workflow
+    - cli-distribution
+    - cli-commands
+  shared: []
+  files:
+    - wiki/knowledge/domains/change-workflow/features/change-folder-states/behavior.md
+    - wiki/knowledge/domains/change-workflow/domain-wide/change-checkouts.md
+    - wiki/knowledge/domains/change-workflow/index.md
+    - wiki/knowledge/domains/cli-distribution/features/weave-status/behavior.md
+    - wiki/knowledge/domains/cli-commands/features/core-command-reference/behavior.md
+  delta: wiki/changes/261107-4oq6-flag-stale-change-folders-in-weave/knowledge-delta.md
+  reason: Documented change folder states, the shared landed check, background
+    refresh, missing-folder close/switch, and the weave status attention line.

@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
-import { closeChange, createChange, listChanges, setupChange, switchChange } from "../src/lib/changes.js";
+import { readAttention } from "../src/lib/change-attention.js";
+import { closeChange, createChange, listChanges, setupChange, statusChange, switchChange } from "../src/lib/changes.js";
+import { readBases } from "../src/lib/change-bases.js";
 import { pathExists } from "../src/lib/files.js";
 import { prepareTasks } from "../src/lib/task-prepare.js";
 import { registerRepoInWorkspaceMetadata } from "../src/lib/workspace-repos.js";
@@ -315,9 +317,24 @@ describe("worktree checkouts", () => {
     expect(closed.branches.every((branch) => !branch.pushed)).toBe(true);
     expect(await pathExists(folder)).toBe(false);
     expect(await git(path.join(fixture.workspace, "api"), ["branch", "--list", created.branch])).toContain(created.branch);
+    // The remembered starting branch outlives the folder.
+    expect(await readBases(path.join(fixture.workspace, ".git", "weave"), created.id)).toMatchObject({ repos: { api: { source: "created" } } });
 
     const next = await createChange({ cwd: fixture.workspace, title: "Next", now, randomId: () => "e5f6", sessionPath: fixture.sessionPath });
     expect(next.slot).toBe(1);
+  });
+
+  it("remembers each repo's starting branch outside the change folder", async () => {
+    const fixture = await workspaceFixture();
+    const latestApi = await pushFromSecondClone(fixture, "api", "pushed after the clone");
+    const created = await createChange({ cwd: fixture.workspace, title: "Login", now, randomId: () => "a1b2", sessionPath: fixture.sessionPath });
+
+    const bases = await readBases(path.join(fixture.workspace, ".git", "weave"), created.id);
+    expect(bases?.repos).toMatchObject({
+      root: { base: "main", source: "created" },
+      api: { base: "origin/main", base_commit: latestApi, source: "created" },
+      web: { base: "origin/main", source: "created" },
+    });
   });
 
   it("runs setup only after a person approves the exact command", async () => {
@@ -366,6 +383,202 @@ describe("worktree checkouts", () => {
     expect(raw.checkout).toBe("worktree");
     expect(raw.repos.api).toMatchObject({ copy: [".env"], setup: expect.stringContaining("WEAVE_SLOT") });
     expect(raw.repos.docs).toEqual({ path: "docs", kind: "docs" });
+  });
+});
+
+describe("missing change folders", () => {
+  async function committedChange(fixture: Fixture, title: string, randomId: string) {
+    const created = await createChange({ cwd: fixture.workspace, title, now, randomId: () => randomId, sessionPath: fixture.sessionPath });
+    for (const repo of ["api", "web", "."]) {
+      await writeFile(path.join(created.folder!, repo, `${randomId}.txt`), "work\n");
+      await git(path.join(created.folder!, repo), ["add", "."]);
+      await git(path.join(created.folder!, repo), ["commit", "-m", "work"]);
+    }
+    return created;
+  }
+
+  it("closes a hand-deleted folder: clears leftovers, keeps branches, frees the slot, and warns", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rm(created.folder!, { recursive: true, force: true });
+
+    const closed = await closeChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath });
+
+    expect(closed.removed).toEqual(["api", "web", "root"]);
+    expect(closed.warnings).toEqual(["if you moved this folder, move it back first; closing stops tracking it"]);
+    expect(closed.message).toContain("Warning: if you moved this folder");
+    for (const repo of [".", "api", "web"]) {
+      const cwd = path.join(fixture.workspace, repo);
+      expect(await git(cwd, ["worktree", "list", "--porcelain"])).not.toContain(created.branch);
+      // The branch is no longer blocked: it can be checked out and deleted.
+      await git(cwd, ["checkout", "-q", created.branch]);
+      await git(cwd, ["checkout", "-q", "-"]);
+    }
+    await git(path.join(fixture.workspace, "web"), ["branch", "-D", created.branch]);
+    expect(await readBases(path.join(fixture.workspace, ".git", "weave"), created.id)).toBeDefined();
+    const next = await createChange({ cwd: fixture.workspace, title: "Next", now, randomId: () => "e5f6", sessionPath: fixture.sessionPath });
+    expect(next.slot).toBe(1);
+  });
+
+  it("leaves other changes' leftover records alone when closing", async () => {
+    const fixture = await workspaceFixture();
+    const one = await committedChange(fixture, "Login", "a1b2");
+    const two = await committedChange(fixture, "Billing", "c3d4");
+    await rm(one.folder!, { recursive: true, force: true });
+    await rm(two.folder!, { recursive: true, force: true });
+
+    await closeChange({ cwd: fixture.workspace, change: one.id, sessionPath: fixture.sessionPath });
+
+    expect(await git(path.join(fixture.workspace, "api"), ["worktree", "list", "--porcelain"])).toContain(two.branch);
+  });
+
+  it("closes after git already cleared its own record", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rm(created.folder!, { recursive: true, force: true });
+    for (const repo of [".", "api", "web"]) await git(path.join(fixture.workspace, repo), ["worktree", "prune"]);
+
+    const listed = await listChanges({ cwd: fixture.workspace, sessionPath: fixture.sessionPath });
+    expect(listed.targets[0]!.changes.find((change) => change.id === created.id)?.state?.id).toBe("folder_missing");
+
+    const closed = await closeChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath });
+    expect(closed.removed).toEqual([]);
+    expect(await pathExists(path.join(fixture.workspace, ".git", "weave", "changes", `${created.id}.yml`))).toBe(false);
+  });
+
+  it("refuses to close a folder kept on purpose, or while change folders are unavailable", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await git(path.join(fixture.workspace, "api"), ["worktree", "lock", path.join(created.folder!, "api")]);
+    await expect(closeChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath })).rejects.toMatchObject({
+      code: "worktree_locked",
+      message: expect.stringContaining("git worktree unlock"),
+    });
+    await git(path.join(fixture.workspace, "api"), ["worktree", "unlock", path.join(created.folder!, "api")]);
+
+    // An unmounted drive: the changes root and its parent are both gone.
+    const mounted = path.join(fixture.base, "drive");
+    await mkdir(mounted);
+    await rename(path.join(fixture.base, "acme.changes"), path.join(mounted, "acme.changes"));
+    const raw = YAML.parse(await readFile(path.join(fixture.workspace, ".weave", "workspace.yml"), "utf8"));
+    raw.worktrees = { ...(raw.worktrees ?? {}), root: "../drive/acme.changes" };
+    await writeFile(path.join(fixture.workspace, ".weave", "workspace.yml"), YAML.stringify(raw));
+    const stateFile = path.join(fixture.workspace, ".git", "weave", "changes", `${created.id}.yml`);
+    const state = YAML.parse(await readFile(stateFile, "utf8"));
+    await writeFile(stateFile, YAML.stringify({ ...state, folder: path.join(mounted, "acme.changes", created.id) }));
+    await rename(mounted, path.join(fixture.base, "drive-unmounted"));
+
+    await expect(closeChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath })).rejects.toMatchObject({
+      code: "changes_unavailable",
+    });
+  });
+
+  it("recreates a missing folder with switch, keeping its slot when free and resetting setup", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rm(created.folder!, { recursive: true, force: true });
+
+    const reopened = await switchChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath });
+
+    expect(reopened.folder).toBe(created.folder);
+    expect(reopened.change.slot).toBe(1);
+    expect(reopened.slot_changed).toBeUndefined();
+    expect(reopened.setup_reset).toEqual(["root", "api", "web"]);
+    expect(await readFile(path.join(created.folder!, "api", "a1b2.txt"), "utf8")).toBe("work\n");
+    expect(await pathExists(path.join(created.folder!, "wiki", "changes", created.id, "status.yml"))).toBe(true);
+  });
+
+  it("gives a recreated folder a new slot when its old one was taken", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rm(created.folder!, { recursive: true, force: true });
+    const other = await createChange({ cwd: fixture.workspace, title: "Billing", now, randomId: () => "c3d4", sessionPath: fixture.sessionPath });
+    expect(other.slot).toBe(1);
+
+    const reopened = await switchChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath });
+
+    expect(reopened.slot_changed).toEqual({ from: 1, to: 2 });
+    expect(reopened.change.slot).toBe(2);
+    expect(reopened.message).toContain("Slot changed: 1 was taken");
+  });
+
+  it("drops a recreated repo's setup record but keeps approvals", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    const stateFile = path.join(fixture.workspace, ".git", "weave", "changes", `${created.id}.yml`);
+    const state = YAML.parse(await readFile(stateFile, "utf8"));
+    await writeFile(stateFile, YAML.stringify({ ...state, setup: { api: { hash: "x", completed_at: now.toISOString() } } }));
+    await writeFile(path.join(fixture.workspace, ".git", "weave", "approved-setup.yml"), YAML.stringify({ approved: ["kept"] }));
+    await rm(created.folder!, { recursive: true, force: true });
+
+    await switchChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath });
+
+    expect(YAML.parse(await readFile(stateFile, "utf8")).setup ?? {}).toEqual({});
+    expect(YAML.parse(await readFile(path.join(fixture.workspace, ".git", "weave", "approved-setup.yml"), "utf8"))).toEqual({ approved: ["kept"] });
+  });
+
+  it("recreates a folder after it was moved away", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rename(created.folder!, path.join(fixture.base, "moved-away"));
+
+    const reopened = await switchChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath });
+    expect(reopened.repos?.every((repo) => repo.status === "created")).toBe(true);
+  });
+
+  it("removes nothing when a later repo blocks switch", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rm(created.folder!, { recursive: true, force: true });
+    // web's leftover record is locked, so switch must stop before touching root or api.
+    await git(path.join(fixture.workspace, "web"), ["worktree", "lock", path.join(created.folder!, "web")]);
+
+    await expect(switchChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath })).rejects.toMatchObject({
+      code: "worktree_blocked",
+    });
+    expect(await git(path.join(fixture.workspace, "api"), ["worktree", "list", "--porcelain"])).toContain(created.branch);
+  });
+
+  it("says folder missing, not not-found, when asked about a missing-folder change", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rm(created.folder!, { recursive: true, force: true });
+
+    await expect(statusChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath })).rejects.toMatchObject({
+      code: "folder_missing",
+      message: expect.stringContaining("weave change list"),
+    });
+  });
+
+  it("runs every next step the list offers for missing and closed changes", async () => {
+    const fixture = await workspaceFixture();
+    const missing = await committedChange(fixture, "Login", "a1b2");
+    await rm(missing.folder!, { recursive: true, force: true });
+    const closed = await committedChange(fixture, "Billing", "c3d4");
+    await closeChange({ cwd: fixture.workspace, change: closed.id, sessionPath: fixture.sessionPath });
+
+    const listed = await listChanges({ cwd: fixture.workspace, sessionPath: fixture.sessionPath });
+    const commandsFor = (id: string) => listed.targets[0]!.changes.find((change) => change.id === id)?.state?.next.commands ?? [];
+    expect(commandsFor(missing.id)).toEqual([`weave change close ${missing.id}`, `weave change switch ${missing.id}`]);
+    expect(commandsFor(closed.id)).toEqual([`weave change switch ${closed.id}`]);
+
+    // switch first (it needs the leftovers), then close the recreated folder, then reopen the closed one.
+    await switchChange({ cwd: fixture.workspace, change: missing.id, sessionPath: fixture.sessionPath });
+    await closeChange({ cwd: fixture.workspace, change: missing.id, sessionPath: fixture.sessionPath });
+    await switchChange({ cwd: fixture.workspace, change: closed.id, sessionPath: fixture.sessionPath });
+  }, 30_000);
+
+  it("drops a closed change from weave status right away", async () => {
+    const fixture = await workspaceFixture();
+    const created = await committedChange(fixture, "Login", "a1b2");
+    await rm(created.folder!, { recursive: true, force: true });
+    await listChanges({ cwd: fixture.workspace, sessionPath: fixture.sessionPath });
+    const stateDir = path.join(fixture.workspace, ".git", "weave");
+    expect(await readAttention(stateDir)).toMatchObject({ total: 1, counts: { folder_missing: 1 } });
+
+    await closeChange({ cwd: fixture.workspace, change: created.id, sessionPath: fixture.sessionPath });
+
+    expect(await readAttention(stateDir)).toMatchObject({ total: 0 });
   });
 });
 

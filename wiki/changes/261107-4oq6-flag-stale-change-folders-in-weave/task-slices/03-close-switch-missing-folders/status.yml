@@ -1,0 +1,15 @@
+version: 1
+id: 03-close-switch-missing-folders
+title: Close and switch for missing folders
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 02-list-change-states
+task_summary:
+  total: 3
+  done: 3
+  blocked: 0
+created_at: 2026-11-08T14:27:28.000Z
+updated_at: 2026-11-08T18:41:35.478Z

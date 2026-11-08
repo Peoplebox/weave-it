@@ -1,0 +1,14 @@
+version: 1
+id: 01-landed-check
+title: Shared landed check and starting-branch memory
+status: done
+owner: ""
+repos:
+  - root
+depends_on: []
+task_summary:
+  total: 4
+  done: 4
+  blocked: 0
+created_at: 2026-11-08T14:27:28.000Z
+updated_at: 2026-11-08T18:41:35.478Z

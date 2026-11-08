@@ -3,9 +3,14 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { type AgentName, listDefaultSkills, loadAgentsManifest } from "./agent-skills.js";
+import { readAttention } from "./change-attention.js";
 import { pathExists } from "./files.js";
+import { mainWorktreePath } from "./git.js";
+import { localStateDir } from "./local-state.js";
 import { gatherNotices, type Notice } from "./notices.js";
 import { getNpmVersionInfo } from "./npm-version.js";
+import { findWorkspaceMode } from "./workspace-mode.js";
+import { readWorkspaceMetadata } from "./workspace-repos.js";
 
 const agentOrder: AgentName[] = ["claude", "codex", "cursor", "opencode"];
 
@@ -17,12 +22,21 @@ export interface StatusSkillRow {
   state: "current" | "outdated" | "modified" | "missing";
 }
 
+// The last worked-out count of changes needing attention (landed, or folder missing).
+export interface ChangesAttention {
+  total: number;
+  counts: Record<string, number>;
+  computed_at: string;
+}
+
 export interface StatusResult {
   status: "ok";
   packageVersion: string;
   cwd: string;
   inRepo: boolean;
   skills: StatusSkillRow[];
+  // null when nothing has been worked out yet, or the repo doesn't use change folders.
+  changes_attention: ChangesAttention | null;
   notices: Notice[];
   message: string;
 }
@@ -39,6 +53,7 @@ export async function buildStatus(options: BuildStatusOptions): Promise<StatusRe
   const packageVersion = options.packageVersion ?? (await readPackageVersion());
   const inRepo = await pathExists(join(options.cwd, ".weave", "agents.yml"));
   const skills = inRepo ? await collectSkillRows(options) : [];
+  const changesAttention = await readChangesAttention(options.cwd);
   const npmLatest =
     options.npmLatest === undefined
       ? (await getNpmVersionInfo({ packageVersion, env: options.env })).cachedLatest
@@ -57,16 +72,46 @@ export async function buildStatus(options: BuildStatusOptions): Promise<StatusRe
     cwd: options.cwd,
     inRepo,
     skills,
+    changes_attention: changesAttention,
     notices,
     message: renderStatusMessage({
       packageVersion,
       cwd: options.cwd,
       inRepo,
       skills,
+      changesAttention,
       notices,
       npmLatest: npmLatest ?? null,
     }),
   };
+}
+
+// Reads the snapshot `weave change list` leaves behind. `weave status` never fetches or
+// runs the landed check itself, so this may briefly lag behind the list.
+export async function readChangesAttention(cwd: string): Promise<ChangesAttention | null> {
+  try {
+    const found = await findWorkspaceMode(cwd);
+    if (!found) return null;
+    const metadata = await readWorkspaceMetadata(found.workspacePath);
+    if (metadata?.checkout !== "worktree") return null;
+    const mainRoot = (await mainWorktreePath(found.workspacePath)) ?? found.workspacePath;
+    const snapshot = await readAttention(await localStateDir(mainRoot));
+    return snapshot ? { total: snapshot.total, counts: snapshot.counts, computed_at: snapshot.computed_at } : null;
+  } catch {
+    return null;
+  }
+}
+
+const attentionNames: Array<[string, string]> = [
+  ["landed", "landed"],
+  ["folder_missing", "folder missing"],
+];
+
+export function attentionLine(attention: ChangesAttention | null): string | undefined {
+  if (!attention || attention.total <= 0) return undefined;
+  const parts = attentionNames.filter(([id]) => (attention.counts[id] ?? 0) > 0).map(([id, name]) => `${attention.counts[id]} ${name}`);
+  const subject = attention.total === 1 ? "1 change needs" : `${attention.total} changes need`;
+  return `${subject} attention (${parts.join(", ")}). Run 'weave change list'.`;
 }
 
 export async function collectSkillRows(options: BuildStatusOptions): Promise<StatusSkillRow[]> {
@@ -117,6 +162,7 @@ function renderStatusMessage(opts: {
   cwd: string;
   inRepo: boolean;
   skills: StatusSkillRow[];
+  changesAttention: ChangesAttention | null;
   notices: Notice[];
   npmLatest: string | null;
 }): string {
@@ -156,6 +202,12 @@ function renderStatusMessage(opts: {
     for (const row of rows) {
       lines.push(renderRow(row));
     }
+  }
+
+  const attention = attentionLine(opts.changesAttention);
+  if (attention) {
+    lines.push("");
+    lines.push(attention);
   }
 
   lines.push("");

@@ -202,6 +202,15 @@ Auto-advance recommendation (from `weave advance --dry-run --json` and `weave ch
 - The recommended skill is `weave-explore`, `weave-architect`, `weave-stress-test`, `weave-prd` for `feat`, or `weave-slices` -> say auto-advance never starts it because it needs the user's decisions.
 - Flags that are off -> mention them only when the user asks how to automate the next step: `weave change auto-advance <transition> on`.
 
+Change cleanup recommendation (worktree checkouts, where each change has its own folder):
+
+- Before recommending `weave change close`, or saying that nothing needs cleaning up, run `weave change list --fetch --json`. It waits for a fresh look at the remote; plain `weave change list` may answer from older remote data and only under-reports landed work.
+- Decide from `state.id` and label `id`s, never from `state.label` or label text, which may be reworded.
+- Only `landed` and `folder_missing` need attention. Recommend exactly the commands in that change's `state.next.commands`, or relay `state.next.text` when there are no commands.
+- Never treat `landed_with_newer_commits` as safe to close or delete; say the newer commits need review first.
+- `in_progress`, `closed_not_landed`, `closed_unchecked`, `folder_missing_kept`, and `folder_unavailable` need no cleanup from you. Mention them only when the user asks about cleanup.
+- In in-place checkouts, `weave change list` has no `state` field; skip this section.
+
 # Output Format
 
 Use these headings when relevant and keep them easy to scan:

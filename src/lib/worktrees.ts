@@ -1,20 +1,22 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { cp, mkdir, open, readFile, readdir, realpath, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, open, readFile, readdir, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
+import { recordBases, type BaseRepoRecord } from "./change-bases.js";
 import { ChangeCommandError } from "./change-error.js";
 import { pathExists } from "./files.js";
 import {
   currentBranch,
-  gitCommonDir,
   listGitWorktrees,
   mainWorktreePath,
   probeGitRoot,
   resolveCommit,
   resolveDefaultBase,
   runGit,
+  worktreeLockedOnDisk,
 } from "./git.js";
+import { localStateDir, withStateLock } from "./local-state.js";
 import { readWorkspaceMetadata, type CheckoutMode, type WorkspaceMetadata } from "./workspace-repos.js";
 
 export const rootRepoId = "root";
@@ -43,6 +45,10 @@ export interface EnsureWorktreesResult {
   repos: WorktreeRepoResult[];
   copied: string[];
   warnings: string[];
+  // A recreated folder whose old slot was taken got a new one.
+  slot_changed?: { from: number; to: number };
+  // Repos whose folder was recreated, so their setup counts as not run.
+  setup_reset?: string[];
 }
 
 export interface EnsureWorktreesOptions {
@@ -75,16 +81,20 @@ interface RepoTarget {
 type RepoPlan =
   | (RepoTarget & { action: "reuse" })
   | (RepoTarget & { action: "skip"; reason: string })
-  | (RepoTarget & { action: "add_existing"; ref: string })
+  // `staleEntry`: git's leftover record of this branch at a folder that no longer exists,
+  // removed in the apply phase so the branch can be checked out again.
+  | (RepoTarget & { action: "add_existing"; ref: string; staleEntry?: string })
   | (RepoTarget & { action: "add_tracking"; ref: string })
   | (RepoTarget & { action: "add_new"; base: string; baseCommit: string });
 
-interface LocalChangeState {
+export interface LocalChangeState {
   version: 1;
   change: string;
   folder: string;
   slot: number;
   created_at: string;
+  // The repos this change was checked out in; absent in files from older Weave versions.
+  repos?: string[];
   setup?: Record<string, { hash: string; completed_at: string }>;
 }
 
@@ -143,6 +153,9 @@ export async function ensureChangeWorktrees(options: EnsureWorktreesOptions): Pr
     copied.push(...(await copyIgnoredFiles(plan, warnings)));
   }
 
+  const recreated = results.filter((repo) => repo.status === "created").map((repo) => repo.id);
+  let slotChanged: { from: number; to: number } | undefined;
+  let setupReset: string[] | undefined;
   const state = await withStateLock(mainRoot, async (stateDir) => {
     const existing = await readLocalState(stateDir, options.changeId);
     const next: LocalChangeState = existing ?? {
@@ -152,20 +165,57 @@ export async function ensureChangeWorktrees(options: EnsureWorktreesOptions): Pr
       slot: await nextFreeSlot(stateDir),
       created_at: now.toISOString(),
     };
-    await writeLocalState(stateDir, { ...next, folder });
+    if (existing && recreated.length > 0) {
+      // A recreated folder keeps its slot only while no other open folder holds it.
+      if (await slotHeldByOther(stateDir, options.changeId, existing.slot)) {
+        const to = await nextFreeSlot(stateDir, { exclude: options.changeId, avoid: existing.slot });
+        slotChanged = { from: existing.slot, to };
+        next.slot = to;
+      }
+      // Its setup ran in a folder that no longer exists, so it counts as not run.
+      setupReset = recreated;
+      if (next.setup) {
+        next.setup = Object.fromEntries(Object.entries(next.setup).filter(([repo]) => !recreated.includes(repo)));
+      }
+    }
+    const repos = [...new Set([...(next.repos ?? []), ...results.filter((repo) => repo.status !== "skipped_not_git").map((repo) => repo.id)])];
+    await writeLocalState(stateDir, { ...next, folder, repos });
     return next;
   });
 
-  return { folder, slot: state.slot, repos: results, copied, warnings };
+  // The starting branch is remembered outside the folder so it survives close.
+  const bases: Record<string, BaseRepoRecord> = {};
+  for (const result of results) {
+    if (result.base && result.base_commit) {
+      bases[result.id] = { base: result.base, base_commit: result.base_commit, source: "created" };
+    }
+  }
+  await recordBases(mainRoot, options.changeId, bases, now);
+
+  return {
+    folder,
+    slot: state.slot,
+    repos: results,
+    copied,
+    warnings,
+    ...(slotChanged ? { slot_changed: slotChanged } : {}),
+    ...(setupReset ? { setup_reset: setupReset } : {}),
+  };
 }
 
 export interface RemoveWorktreesResult {
   folder: string;
   removed: string[];
   branches: Array<{ repo: string; branch: string; pushed: boolean }>;
+  warnings: string[];
 }
 
+export const movedFolderWarning = "if you moved this folder, move it back first; closing stops tracking it";
+
 // Removes a change's worktrees but keeps every branch, so closing never deletes commits.
+// It also clears what a hand-deleted folder leaves behind: git's record of it (this
+// change's entries only, never `git worktree prune`) and Weave's own record. The
+// remembered starting branch is kept.
 export async function removeChangeWorktrees(options: {
   rootPath: string;
   changeId: string;
@@ -175,22 +225,39 @@ export async function removeChangeWorktrees(options: {
   const { mainRoot, metadata } = await workspaceLayout(options.rootPath);
   const stateDir = await localStateDir(mainRoot);
   const state = await readLocalState(stateDir, options.changeId);
-  const folder = state?.folder ?? path.join(changesRoot(mainRoot, metadata), options.changeId);
+  const root = changesRoot(mainRoot, metadata);
+  const folder = state?.folder ?? path.join(root, options.changeId);
+
+  if (!(await pathExists(folder)) && isInside(folder, root) && (await changesRootMissingParent(root))) {
+    throw new ChangeCommandError(
+      "changes_unavailable",
+      `Change folders are unavailable at ${root}; reconnect the drive or folder first.`,
+      { path: root },
+    );
+  }
 
   const sources = [
     { id: rootRepoId, sourcePath: mainRoot },
     ...Object.entries(metadata.repos).map(([id, entry]) => ({ id, sourcePath: path.join(mainRoot, entry.path) })),
   ];
-  const found: Array<{ id: string; path: string }> = [];
+  const found: Array<{ id: string; path: string; exists: boolean; locked: boolean }> = [];
   for (const source of sources) {
     if (!(await pathExists(source.sourcePath))) continue;
     const entry = (await listGitWorktrees(source.sourcePath)).find((worktree) => worktree.branch === options.branch);
     if (entry && path.resolve(entry.path) !== path.resolve(source.sourcePath)) {
-      found.push({ id: source.id, path: entry.path });
+      const locked = entry.locked || (await worktreeLockedOnDisk(source.sourcePath, entry.path));
+      found.push({ id: source.id, path: entry.path, exists: await pathExists(entry.path), locked });
     }
   }
-  if (found.length === 0) {
+  if (found.length === 0 && !state) {
     throw new ChangeCommandError("no_worktrees", `No worktrees found for ${options.branch}.`, { folder });
+  }
+
+  const locked = found.find((worktree) => worktree.locked);
+  if (locked) {
+    throw new ChangeCommandError("worktree_locked", `${locked.path} is locked; unlock with \`git worktree unlock ${locked.path}\` first.`, {
+      path: locked.path,
+    });
   }
 
   const blockers: WorktreeBlocker[] = [];
@@ -198,7 +265,7 @@ export async function removeChangeWorktrees(options: {
   if (isInside(cwd, folder)) {
     blockers.push({ target: folder, reason: "This command is running inside the change folder. Run it from your main checkout." });
   }
-  for (const worktree of found) {
+  for (const worktree of found.filter((item) => item.exists)) {
     const status = await runGit(["status", "--porcelain"], worktree.path);
     if (!status.ok) {
       blockers.push({ target: worktree.id, reason: `Could not read git status: ${status.stderr}` });
@@ -229,16 +296,26 @@ export async function removeChangeWorktrees(options: {
   await rmdir(folder).catch(() => undefined);
   await rm(path.join(stateDir, "changes", `${options.changeId}.yml`), { force: true });
 
+  const missing = found.some((worktree) => !worktree.exists) || (found.length === 0 && !(await pathExists(folder)));
   const branches = [];
-  for (const worktree of found) {
-    const source = sourceFor(sources, worktree.id);
+  for (const source of sources) {
+    if (!(await pathExists(source.sourcePath))) continue;
+    if (!found.some((worktree) => worktree.id === source.id) && source.id !== rootRepoId) continue;
+    if (!(await resolveCommit(source.sourcePath, `refs/heads/${options.branch}`))) continue;
     branches.push({
-      repo: worktree.id,
+      repo: source.id,
       branch: options.branch,
-      pushed: Boolean(await resolveCommit(source, `refs/remotes/origin/${options.branch}`)),
+      pushed: Boolean(await resolveCommit(source.sourcePath, `refs/remotes/origin/${options.branch}`)),
     });
   }
-  return { folder, removed, branches };
+  return { folder, removed, branches, warnings: missing ? [movedFolderWarning] : [] };
+}
+
+async function changesRootMissingParent(root: string): Promise<boolean> {
+  if (await pathExists(root)) return false;
+  const link = await lstat(root).catch(() => undefined);
+  if (link?.isSymbolicLink()) return true;
+  return !(await pathExists(path.dirname(root)));
 }
 
 export interface LocalChangeInfo {
@@ -394,7 +471,7 @@ async function requireMetadata(rootPath: string): Promise<WorkspaceMetadata> {
   return metadata;
 }
 
-function changesRoot(mainRoot: string, metadata: WorkspaceMetadata): string {
+export function changesRoot(mainRoot: string, metadata: WorkspaceMetadata): string {
   return metadata.worktrees.root
     ? path.resolve(mainRoot, metadata.worktrees.root)
     : path.join(path.dirname(mainRoot), `${path.basename(mainRoot)}.changes`);
@@ -466,12 +543,23 @@ async function planTarget(
   }
 
   const existing = (await listGitWorktrees(source)).find((worktree) => worktree.branch === options.branch);
+  let staleEntry: string | undefined;
   if (existing) {
-    if (path.resolve(existing.path) === path.resolve(target.worktreePath)) {
+    const onDisk = await pathExists(existing.path);
+    if (onDisk && path.resolve(existing.path) === path.resolve(target.worktreePath)) {
       return { ...target, action: "reuse" };
     }
-    blockers.push({ target: target.id, reason: `${options.branch} is already checked out at ${existing.path}.` });
-    return undefined;
+    if (onDisk) {
+      blockers.push({ target: target.id, reason: `${options.branch} is already checked out at ${existing.path}.` });
+      return undefined;
+    }
+    // The folder is gone (deleted, or moved). Nothing is removed while planning: the
+    // leftover record is cleared in the apply phase, once every repo has passed.
+    if (existing.locked || (await worktreeLockedOnDisk(source, existing.path))) {
+      blockers.push({ target: target.id, reason: `${existing.path} is locked; unlock it with \`git worktree unlock ${existing.path}\` first.` });
+      return undefined;
+    }
+    staleEntry = existing.path;
   }
   if (await pathExists(target.worktreePath)) {
     blockers.push({ target: target.id, reason: `${target.worktreePath} already exists and is not this change's worktree.` });
@@ -479,7 +567,7 @@ async function planTarget(
   }
 
   if (await resolveCommit(source, `refs/heads/${options.branch}`)) {
-    return { ...target, action: "add_existing", ref: options.branch };
+    return { ...target, action: "add_existing", ref: options.branch, ...(staleEntry ? { staleEntry } : {}) };
   }
   if (options.fetchBranch && (await runGit(["remote", "get-url", "origin"], source)).ok) {
     // Fails quietly when the repo has no such branch on origin; it then starts from its base.
@@ -555,6 +643,9 @@ async function applyPlan(plan: RepoPlan, branch: string): Promise<WorktreeRepoRe
     case "skip":
       return { ...common, status: "skipped_not_git", reason: plan.reason };
     case "add_existing":
+      if (plan.staleEntry) {
+        await gitOrThrow(["worktree", "remove", plan.staleEntry], plan.sourcePath);
+      }
       await gitOrThrow(["worktree", "add", plan.worktreePath, plan.ref], plan.sourcePath);
       return { ...common, status: "created" };
     case "add_tracking":
@@ -611,40 +702,12 @@ async function copyIgnoredFiles(plan: RepoPlan, warnings: string[]): Promise<str
   return copied;
 }
 
-// Machine-local state lives in the main repo's git directory: it is shared by every
-// worktree of that repo and is never committed.
-async function localStateDir(mainRoot: string): Promise<string> {
-  const common = (await gitCommonDir(mainRoot)) ?? path.join(mainRoot, ".git");
-  return path.join(common, "weave");
+export async function listLocalChangeIds(stateDir: string): Promise<string[]> {
+  const entries = await readdir(path.join(stateDir, "changes")).catch(() => [] as string[]);
+  return entries.filter((name) => name.endsWith(".yml")).map((name) => name.slice(0, -".yml".length));
 }
 
-async function withStateLock<T>(mainRoot: string, action: (stateDir: string) => Promise<T>): Promise<T> {
-  const stateDir = await localStateDir(mainRoot);
-  await mkdir(stateDir, { recursive: true });
-  const lock = path.join(stateDir, "lock");
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await mkdir(lock);
-      break;
-    } catch (error) {
-      const age = await stat(lock).then((info) => Date.now() - info.mtimeMs).catch(() => 0);
-      if (age > 30_000) {
-        await rm(lock, { recursive: true, force: true });
-      } else if (attempt >= 100) {
-        throw new ChangeCommandError("state_locked", `Another Weave command is updating ${stateDir}. Try again.`, { error: errorText(error) });
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-    }
-  }
-  try {
-    return await action(stateDir);
-  } finally {
-    await rm(lock, { recursive: true, force: true });
-  }
-}
-
-async function readLocalState(stateDir: string, changeId: string): Promise<LocalChangeState | undefined> {
+export async function readLocalState(stateDir: string, changeId: string): Promise<LocalChangeState | undefined> {
   const file = path.join(stateDir, "changes", `${changeId}.yml`);
   if (!(await pathExists(file))) return undefined;
   const parsed = YAML.parse(await readFile(file, "utf8")) as LocalChangeState | null;
@@ -658,16 +721,25 @@ async function writeLocalState(stateDir: string, state: LocalChangeState): Promi
 
 // Slots are small numbers projects can turn into ports. A slot frees up when its change
 // folder is closed or deleted.
-async function nextFreeSlot(stateDir: string): Promise<number> {
-  const used = new Set<number>();
-  const dir = path.join(stateDir, "changes");
-  for (const file of (await readdir(dir).catch(() => [])).filter((name) => name.endsWith(".yml"))) {
-    const state = await readLocalState(stateDir, file.slice(0, -".yml".length));
+async function nextFreeSlot(stateDir: string, options: { exclude?: string; avoid?: number } = {}): Promise<number> {
+  const used = new Set<number>(options.avoid !== undefined ? [options.avoid] : []);
+  for (const id of await listLocalChangeIds(stateDir)) {
+    if (id === options.exclude) continue;
+    const state = await readLocalState(stateDir, id);
     if (state && (await pathExists(state.folder))) used.add(state.slot);
   }
   let slot = 1;
   while (used.has(slot)) slot += 1;
   return slot;
+}
+
+async function slotHeldByOther(stateDir: string, changeId: string, slot: number): Promise<boolean> {
+  for (const id of await listLocalChangeIds(stateDir)) {
+    if (id === changeId) continue;
+    const state = await readLocalState(stateDir, id);
+    if (state && state.slot === slot && (await pathExists(state.folder))) return true;
+  }
+  return false;
 }
 
 function setupHash(item: SetupCommand): string {

@@ -6,10 +6,15 @@ import { promisify } from "node:util";
 import YAML from "yaml";
 import { architectureMarkdownPaths, hasSubstantiveMarkdown, resolveArchitectureArtifact } from "./architecture-artifact.js";
 import { artifactFrontmatter } from "./artifact-metadata.js";
+import { writeAttention } from "./change-attention.js";
 import { ChangeCommandError } from "./change-error.js";
+import { gatherFacts, resolveMainRoot, type GatheredChange, type RemoteFacts } from "./change-facts.js";
+import { remoteFacts, type RefreshRecord } from "./change-refresh.js";
+import { attentionCounts, deriveState, nextLine, stateLine, type ChangeView } from "./change-states.js";
 import { pathExists } from "./files.js";
 import { findGitRoot, listGitWorktrees } from "./git.js";
 import { slugify, titleFromSlug } from "./ids.js";
+import { localStateDir } from "./local-state.js";
 import {
   autoAdvanceDefaults,
   autoAdvanceTransitions,
@@ -29,6 +34,8 @@ import {
   ensureChangeWorktrees,
   readLocalChangeInfo,
   recordCheckoutInStatus,
+  listLocalChangeIds,
+  readLocalState,
   removeChangeWorktrees,
   runChangeSetup,
   workspaceCheckoutMode,
@@ -207,11 +214,38 @@ export interface ChangeSummary {
   active: boolean;
 }
 
+// What `weave change list` reports per change in worktree mode: today's fields, plus the
+// change's state. Fields whose source (the planning files) is unavailable are left empty.
+export interface ListedChangeExtras {
+  planning: { available: true } | { available: false; reason: "folder missing" | "no folder" };
+  missing_folder?: string;
+  state: ChangeView["state"];
+  labels: ChangeView["labels"];
+  landed_check: ChangeView["landed_check"];
+  repos: ChangeView["repos"];
+}
+
+export type ListedChange = Omit<ChangeSummary, "type" | "stage"> & {
+  type: ChangeType | "";
+  stage: StoredChangeStage | "";
+} & Partial<ListedChangeExtras>;
+
+export interface ChangeListFreshness {
+  // A background refresh is running or was just started.
+  refreshing: boolean;
+  // The oldest last-successful fetch among repos with a remote.
+  as_of: string | null;
+  // With `--fetch`: whether the refresh finished in time.
+  refresh_finished?: boolean;
+}
+
 export interface ChangeTargetSummary {
   id?: string;
   name?: string;
   path: string;
-  changes: ChangeSummary[];
+  freshness?: ChangeListFreshness;
+  unavailable?: { path: string };
+  changes: ListedChange[];
 }
 
 export interface ChangeListResult {
@@ -282,6 +316,10 @@ export interface SwitchChangeResult {
   branchStatus: BranchStatus;
   folder?: string;
   repos?: WorktreeRepoResult[];
+  // A recreated folder whose old slot was taken got a new one.
+  slot_changed?: { from: number; to: number };
+  // Repos whose folder was recreated; their setup counts as not run.
+  setup_reset?: string[];
   target: {
     id?: string;
     name?: string;
@@ -313,6 +351,12 @@ export interface CreateChangeOptions {
 export interface ListChangesOptions {
   cwd: string;
   sessionPath?: string;
+  // Include past changes (done).
+  all?: boolean;
+  now?: Date;
+  // What the last refresh recorded, whether one is running now, and, with `--fetch`,
+  // whether the one this list waited for finished.
+  refresh?: { record: RefreshRecord; refreshing: boolean; finished?: boolean };
 }
 
 export interface CurrentChangeOptions {
@@ -496,6 +540,9 @@ async function writeChangeFiles(
 
 export async function listChanges(options: ListChangesOptions): Promise<ChangeListResult> {
   const targets = [await resolveTarget(options.cwd, options.sessionPath)];
+  if ((await workspaceCheckoutMode(targets[0]!.path)) === "worktree") {
+    return listWorktreeChanges(targets[0]!, options);
+  }
   const summaries: ChangeTargetSummary[] = [];
 
   for (const target of targets) {
@@ -509,6 +556,206 @@ export async function listChanges(options: ListChangesOptions): Promise<ChangeLi
     targets: summaries,
     message: formatListMessage(summaries),
   };
+}
+
+// Worktree mode: every change of this repo or workspace gets one state, worked out from
+// live local facts (and the last refresh's remote facts), the same from any folder.
+async function listWorktreeChanges(target: ChangeTarget, options: ListChangesOptions): Promise<ChangeListResult> {
+  const now = options.now ?? new Date();
+  const activeId = await branchChangeIdForTarget(target.path);
+  const remote: RemoteFacts | undefined = options.refresh ? remoteFacts(options.refresh.record) : undefined;
+  const gathered = await gatherFacts(target.path, { now, ...(remote ? { remote } : {}) });
+  const views = gathered.changes.map((change) => deriveState(change.facts));
+  const counts = attentionCounts(views);
+  await writeAttention(gathered.mainRoot, { ...counts, factsAt: gathered.factsAt }, now).catch(() => false);
+
+  const listed: Array<{ change: ListedChange; gathered: GatheredChange; view: ChangeView }> = [];
+  for (const [index, change] of gathered.changes.entries()) {
+    const view = views[index]!;
+    if (view.state.id === "done" && !options.all) continue;
+    listed.push({ change: await listedChange(change, view, activeId), gathered: change, view });
+  }
+  listed.sort((left, right) => compareChangesNewestFirst(left.change as ChangeSummary, right.change as ChangeSummary));
+
+  const unavailable = gathered.unavailableRoot && views.some((view) => view.state.id === "folder_unavailable") ? { path: gathered.unavailableRoot } : undefined;
+  const freshness = describeFreshness(options.refresh, listed.map((item) => item.gathered), now);
+  const summary: ChangeTargetSummary = {
+    id: target.id,
+    name: target.name,
+    path: target.path,
+    freshness: freshness.json,
+    ...(unavailable ? { unavailable } : {}),
+    changes: listed.map((item) => item.change),
+  };
+  return {
+    status: "ok",
+    targets: [summary],
+    message: formatWorktreeListMessage(summary, listed, gathered.gitTooOld, freshness.lines),
+  };
+}
+
+const refreshProblems: Record<string, (message: string | null) => string> = {
+  auth: () => "couldn't refresh: origin needs a login",
+  unreachable: () => "couldn't reach origin",
+  timeout: () => "last refresh timed out",
+  error: (message) => `couldn't refresh: ${message ?? "unknown error"}`,
+};
+
+export function formatAge(iso: string | null, now: Date): string {
+  if (!iso) return "never fetched";
+  const seconds = Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+// The age of remote facts: one shared line at the end, plus a line under a change only
+// when its repos' ages differ or one failed to refresh. A fresh `--fetch` shows no age.
+function describeFreshness(
+  refresh: ListChangesOptions["refresh"],
+  changes: GatheredChange[],
+  now: Date,
+): { json: ChangeListFreshness; lines: { perChange: Map<string, string>; footer?: string } } {
+  const perChange = new Map<string, string>();
+  if (!refresh) return { json: { refreshing: false, as_of: null }, lines: { perChange } };
+  const remotes = Object.entries(refresh.record.repos).filter(([, repo]) => repo.result !== "no_remote");
+  const successes = remotes.map(([, repo]) => repo.last_success_at);
+  const asOf = successes.length === 0 || successes.some((value) => !value) ? null : [...(successes as string[])].sort()[0]!;
+  const json: ChangeListFreshness = {
+    refreshing: refresh.refreshing,
+    as_of: asOf,
+    ...(refresh.finished !== undefined ? { refresh_finished: refresh.finished } : {}),
+  };
+
+  const problemOf = (repo: (typeof remotes)[number][1]) => (repo.result === "ok" ? undefined : refreshProblems[repo.result]?.(repo.message));
+  for (const change of changes) {
+    const repos = change.facts.repos
+      .map((repo) => [repo.id, refresh.record.repos[repo.id]] as const)
+      .filter((entry): entry is readonly [string, NonNullable<(typeof entry)[1]>] => Boolean(entry[1]) && entry[1]!.result !== "no_remote");
+    const ages = new Set(repos.map(([, repo]) => formatAge(repo.last_success_at, now)));
+    if (repos.length > 1 && (ages.size > 1 || repos.some(([, repo]) => repo.result !== "ok"))) {
+      perChange.set(
+        change.facts.id,
+        `as of last fetch: ${repos.map(([id, repo]) => `${id} ${formatAge(repo.last_success_at, now)}${problemOf(repo) ? ` (${problemOf(repo)})` : ""}`).join(" · ")}`,
+      );
+    }
+  }
+
+  const refreshingNote = refresh.refreshing ? " · refreshing now, run again in a few seconds for the latest" : "";
+  let footer: string | undefined;
+  if (refresh.finished === true) {
+    footer = undefined;
+  } else if (remotes.length === 0) {
+    footer = refresh.refreshing ? `fetching remote state for the first time${refreshingNote}` : undefined;
+  } else {
+    const problems = [...new Set(remotes.map(([, repo]) => problemOf(repo)).filter(Boolean))];
+    const didntFinish = refresh.finished === false ? " · the refresh didn't finish in time" : "";
+    footer = `as of last fetch, ${formatAge(asOf, now)}${problems.length > 0 ? ` (${problems.join("; ")})` : ""}${didntFinish}${refreshingNote}`;
+  }
+  return { json, lines: { perChange, ...(footer ? { footer } : {}) } };
+}
+
+async function listedChange(gathered: GatheredChange, view: ChangeView, activeId: string | undefined): Promise<ListedChange> {
+  const { facts, planning } = gathered;
+  const id = facts.id;
+  const slug = id.split("-").slice(2).join("-");
+  const extras: ListedChangeExtras = {
+    planning:
+      planning.kind === "folder" || planning.kind === "main"
+        ? { available: true }
+        : { available: false, reason: facts.hasFolderRecord ? "folder missing" : "no folder" },
+    ...(view.missing_folder ? { missing_folder: view.missing_folder } : {}),
+    state: view.state,
+    labels: view.labels,
+    landed_check: view.landed_check,
+    repos: view.repos,
+  };
+  const located = {
+    ...(facts.folderExists && facts.folder ? { folder: facts.folder } : {}),
+    ...(facts.slot !== undefined ? { slot: facts.slot } : {}),
+  };
+
+  if (planning.kind === "folder" || planning.kind === "main") {
+    const metadata = await readChangeMetadata(planning.changePath, id);
+    return {
+      ...metadata,
+      path: path.join("wiki", "changes", metadata.id),
+      changePath: planning.changePath,
+      ...located,
+      active: metadata.id === activeId,
+      ...extras,
+    };
+  }
+
+  // No planning files here: never invent values. The branch's committed status.yml, when
+  // there is one, still names the change.
+  const fromBranch = planning.kind === "branch" ? metadataFromParsed(parseYamlRecord(planning.statusYaml), id) : undefined;
+  return {
+    id,
+    slug,
+    title: fromBranch?.title ?? "",
+    type: fromBranch?.type ?? "",
+    stage: fromBranch?.stage ?? "",
+    stale: {},
+    stale_history: [],
+    artifacts: {} as ChangeArtifactsMetadata,
+    stress_tests: {},
+    auto_advance: {} as AutoAdvanceFlags,
+    runs: [],
+    branch: changeBranch(id),
+    path: path.join("wiki", "changes", id),
+    changePath: "",
+    ...located,
+    active: id === activeId,
+    ...extras,
+  };
+}
+
+function parseYamlRecord(content: string): Record<string, unknown> {
+  try {
+    const parsed = YAML.parse(content);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function formatWorktreeListMessage(
+  target: ChangeTargetSummary,
+  listed: Array<{ change: ListedChange; gathered: GatheredChange; view: ChangeView }>,
+  gitTooOld: boolean,
+  freshness?: { perChange: Map<string, string>; footer?: string },
+): string {
+  const lines = [`Changes in ${target.name ?? target.path}`];
+  if (target.unavailable) {
+    lines.push(`  change folders unavailable at ${target.unavailable.path} (drive not mounted?)`, "");
+  }
+  if (listed.length === 0) {
+    lines.push("  No changes found.");
+  }
+  for (const { change, gathered, view } of listed) {
+    const title = change.title || "(title unknown)";
+    lines.push(`${change.active ? "*" : " "} ${[change.id, change.type, change.stage, title].filter(Boolean).join("  ")}`);
+    lines.push(`    ${stateLine(view, gathered.facts)}`);
+    const next = nextLine(view);
+    if (next) lines.push(`    ${next}`);
+    const slot = gathered.facts.slot !== undefined ? `  (slot ${gathered.facts.slot})` : "";
+    if (gathered.facts.hasFolderRecord && gathered.facts.folder && view.state.id !== "folder_unavailable") {
+      lines.push(gathered.facts.folderExists ? `    folder: ${gathered.facts.folder}${slot}` : `    folder not found at ${gathered.facts.folder}${slot}`);
+    }
+    const age = freshness?.perChange.get(change.id);
+    if (age) lines.push(`    ${age}`);
+  }
+  if (gitTooOld) {
+    lines.push("", "git 2.38+ is needed to detect squash merges; some changes show as in progress until you upgrade git.");
+  }
+  if (freshness?.footer) {
+    lines.push("", freshness.footer);
+  }
+  return lines.join("\n");
 }
 
 export async function currentChange(options: CurrentChangeOptions): Promise<CurrentChangeResult> {
@@ -536,7 +783,7 @@ export async function statusChange(options: StatusChangeOptions): Promise<Status
   for (const target of targets) {
     if (options.change) {
       const changes = await readChangesWithWorktrees(target.path, await branchChangeIdForTarget(target.path));
-      const change = resolveChangeReference(changes, options.change);
+      const change = await resolveOrExplainMissing(target.path, changes, options.change);
       const branch = await currentBranch(target.path);
       results.push({
         id: target.id,
@@ -665,6 +912,11 @@ async function openChangeFolder(target: ChangeTarget, reference: string): Promis
     active: true,
   };
   const created = worktrees.repos.some((repo) => repo.status === "created");
+  if (created) await refreshAttention(target.path);
+  const recreatedLines = [
+    ...(worktrees.slot_changed ? [`Slot changed: ${worktrees.slot_changed.from} was taken, so this folder now uses slot ${worktrees.slot_changed.to}.`] : []),
+    ...(worktrees.setup_reset ? [`Setup reset for: ${worktrees.setup_reset.join(", ")}. Run \`weave change setup\` before working here.`] : []),
+  ];
 
   return {
     status: "ok",
@@ -672,8 +924,19 @@ async function openChangeFolder(target: ChangeTarget, reference: string): Promis
     branchStatus: created ? "created" : "already_active",
     folder: worktrees.folder,
     repos: worktrees.repos,
+    ...(worktrees.slot_changed ? { slot_changed: worktrees.slot_changed } : {}),
+    ...(worktrees.setup_reset ? { setup_reset: worktrees.setup_reset } : {}),
     target: { id: target.id, name: target.name, path: target.path },
-    message: [`Change: ${change.id}`, "", `Title: ${change.title}`, `Stage: ${change.stage}`, `Branch: ${change.branch}`, "", ...formatWorktreeLines(worktrees)].join("\n"),
+    message: [
+      `Change: ${change.id}`,
+      "",
+      `Title: ${change.title}`,
+      `Stage: ${change.stage}`,
+      `Branch: ${change.branch}`,
+      "",
+      ...formatWorktreeLines(worktrees),
+      ...(recreatedLines.length > 0 ? ["", ...recreatedLines] : []),
+    ].join("\n"),
   };
 }
 
@@ -774,13 +1037,17 @@ export async function closeChange(options: CloseChangeOptions): Promise<CloseCha
   }
 
   const activeId = await branchChangeIdForTarget(target.path);
-  const changes = await readChangesWithWorktrees(target.path, activeId);
+  const changes = [...(await readChangesWithWorktrees(target.path, activeId))];
+  for (const missing of await missingFolderChanges(target.path)) {
+    if (!changes.some((change) => change.id === missing.id)) changes.push(missing);
+  }
   const reference = options.change ?? activeId;
   if (!reference) {
     throw new ChangeCommandError("missing_change", "Name the change to close: `weave change close <change>`.");
   }
   const change = resolveChangeReference(changes, reference);
   const removed = await removeChangeWorktrees({ rootPath: target.path, changeId: change.id, branch: change.branch, cwd: options.cwd });
+  await refreshAttention(target.path);
 
   return {
     status: "ok",
@@ -788,12 +1055,64 @@ export async function closeChange(options: CloseChangeOptions): Promise<CloseCha
     ...removed,
     message: [
       `Closed change: ${change.id}`,
-      `Removed: ${removed.removed.join(", ")}`,
+      `Removed: ${removed.removed.length > 0 ? removed.removed.join(", ") : "nothing (git had already cleared its record)"}`,
+      ...removed.warnings.map((warning) => `Warning: ${warning}`),
       "",
       "Branches kept:",
       ...removed.branches.map((branch) => `  ${branch.repo}  ${branch.branch}${branch.pushed ? "" : "  (not on origin)"}`),
     ].join("\n"),
   };
+}
+
+// Changes Weave or git still records a folder for, whose folder no longer exists. Their
+// planning files are gone, so they're named from their id (or the branch's status.yml).
+async function missingFolderChanges(root: string): Promise<ChangeSummary[]> {
+  const mainRoot = await resolveMainRoot(root);
+  const stateDir = await localStateDir(mainRoot);
+  const ids = new Set(await listLocalChangeIds(stateDir));
+  for (const entry of await listGitWorktrees(mainRoot)) {
+    if (entry.branch?.startsWith("change/") && !(await pathExists(entry.path))) ids.add(entry.branch.slice("change/".length));
+  }
+  const missing: ChangeSummary[] = [];
+  for (const id of ids) {
+    const state = await readLocalState(stateDir, id);
+    if (state && (await pathExists(state.folder))) continue;
+    const shown = await git(["show", `${changeBranch(id)}:wiki/changes/${id}/status.yml`], mainRoot);
+    const metadata = metadataFromParsed(shown ? parseYamlRecord(shown) : {}, id);
+    missing.push({ ...metadata, path: path.join("wiki", "changes", id), changePath: "", active: false });
+  }
+  return missing;
+}
+
+// Resolves a change reference, saying "folder missing" rather than "not found" for a
+// change whose folder disappeared.
+async function resolveOrExplainMissing(root: string, changes: ChangeSummary[], reference: string): Promise<ChangeSummary> {
+  try {
+    return resolveChangeReference(changes, reference);
+  } catch (error) {
+    if (!(error instanceof ChangeCommandError) || error.code !== "change_not_found") throw error;
+    const missing = await missingFolderChanges(root);
+    const match = (() => {
+      try {
+        return resolveChangeReference(missing, reference);
+      } catch {
+        return undefined;
+      }
+    })();
+    if (!match) throw error;
+    throw new ChangeCommandError("folder_missing", `${match.id}: folder missing; run \`weave change list\`.`, { change: match.id });
+  }
+}
+
+// Recomputes `weave status`'s snapshot after a command changed which changes need attention.
+async function refreshAttention(root: string): Promise<void> {
+  try {
+    const gathered = await gatherFacts(root);
+    const counts = attentionCounts(gathered.changes.map((change) => deriveState(change.facts)));
+    await writeAttention(gathered.mainRoot, { ...counts, factsAt: gathered.factsAt });
+  } catch {
+    // The snapshot is a convenience; the next list writes it again.
+  }
 }
 
 export async function progressChange(options: ProgressChangeOptions): Promise<ProgressChangeResult> {
@@ -1497,6 +1816,10 @@ async function readChangesWithWorktrees(root: string, activeId?: string): Promis
 async function readChangeMetadata(changePath: string, fallbackId: string): Promise<ChangeStatusMetadata> {
   const statusPath = path.join(changePath, "status.yml");
   const parsed = (await pathExists(statusPath)) ? await readStatusFile(statusPath) : {};
+  return metadataFromParsed(parsed, fallbackId);
+}
+
+function metadataFromParsed(parsed: Record<string, unknown> | undefined, fallbackId: string): ChangeStatusMetadata {
   const id = typeof parsed?.id === "string" ? parsed.id : fallbackId;
   const slug = typeof parsed?.slug === "string" ? parsed.slug : id.split("-").slice(2).join("-");
   const title = typeof parsed?.title === "string" ? parsed.title : titleFromSlug(slug);

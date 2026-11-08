@@ -18,7 +18,9 @@ A single read-only command that gives the full picture of installed `weave-it` p
 
 Outside a Weave-managed folder (no `.weave/agents.yml`), `weave status` still reports the package version and notices array, with `inRepo: false` and `skills: []`.
 
-The command is read-only; it never writes the cache, never writes the manifest, never touches installed skill files.
+In a worktree-mode repo or workspace (from the main checkout, a change folder, or any subfolder), it also reads the attention snapshot `weave change list` leaves in `.git/weave/attention.json` and, when the total is above zero, prints one line before the notices: `<N> change(s) need attention (<n> landed, <m> folder missing). Run 'weave change list'.` Zero counts are left out. It never fetches or runs the landed check itself, so it can briefly lag behind the list. See [change-folder-states](../../../change-workflow/features/change-folder-states/behavior.md).
+
+The command is read-only; it never writes the cache, the manifest, the attention snapshot, or installed skill files.
 
 ## Domain Model
 
@@ -39,6 +41,9 @@ JSON output shape (`weave status --json`):
       "state": "current"           // current | outdated | modified | missing
     }
   ],
+  "changes_attention": {           // null without a snapshot or outside worktree mode
+    "total": 2, "counts": { "landed": 1, "folder_missing": 1 }, "computed_at": "<iso>"
+  },
   "notices": []                    // same shape as other Tier 1 commands
 }
 ```
@@ -62,7 +67,8 @@ Human output groups installed skills in a fixed-width table (`agent`, `skill`, `
 ## Source Anchors
 
 - Command: `src/commands/status.ts`
-- Action and table renderer: `src/lib/status.ts` (`buildStatus`, `collectSkillRows`, `renderStatusMessage`, `readPackageVersion`)
+- Action and table renderer: `src/lib/status.ts` (`buildStatus`, `collectSkillRows`, `renderStatusMessage`, `readPackageVersion`, `readChangesAttention`, `attentionLine`)
+- Attention snapshot: `src/lib/change-attention.ts`
 - Tier 1 wrapper: `src/lib/with-notices.ts`
 - User-paths: `src/lib/user-paths.ts` (`getNpmVersionCachePath`)
 - Tests: `tests/cli-status.test.ts`
@@ -71,6 +77,7 @@ Human output groups installed skills in a fixed-width table (`agent`, `skill`, `
 
 - 2026-06-03 (change `260603-piln-npm-and-skill-versioning-and-updates`): `weave status` introduced as the fifth Tier 1 command and the canonical detailed view of package, skill, and notice state.
 - 2026-06-07 (change `260607-vuwa-architecture-skill-update`): npm latest refresh targets the scoped package metadata for `@weave-tools/weave-it` instead of the unscoped `weave-it` package name.
+- 2026-11-09 (change `261107-4oq6-flag-stale-change-folders-in-weave`): added the change attention line and `changes_attention`.
 
 ## Open Questions
 

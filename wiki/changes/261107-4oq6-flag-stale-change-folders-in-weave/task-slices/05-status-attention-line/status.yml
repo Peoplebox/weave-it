@@ -1,0 +1,15 @@
+version: 1
+id: 05-status-attention-line
+title: Attention line in weave status
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 02-list-change-states
+task_summary:
+  total: 2
+  done: 2
+  blocked: 0
+created_at: 2026-11-08T14:27:28.000Z
+updated_at: 2026-11-08T18:41:35.478Z

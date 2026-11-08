@@ -405,7 +405,7 @@ These command families no longer expose multi-target behavior. `--target`, `all`
 
 ```bash
 weave change new "<title>" [--type <type>] [--slug <slug>] [--repo <id>] [--base <ref>] [--no-fetch] [--json]
-weave change list [--json]
+weave change list [--all] [--fetch] [--json]
 weave change current [--json]
 weave change status [change] [--json]
 weave change switch <change> [--json]
@@ -416,6 +416,8 @@ weave change clear-stale <lane> [--reason <reason>] [--json]
 weave change verdict <exploration|architecture> <holds|holds-with-changes|needs-reshaping|waived> [--reason <reason>] [--session <path>] [--json]
 weave change knowledge <status> [--domain <domain>...] [--shared <shared>...] [--file <file>...] [--delta <path>] [--reason <reason>] [--invalidated-by <source>] [--json]
 ```
+
+In worktree checkouts `weave change list` shows each change's state, labels, next step, and the age of its remote facts; `--all` adds past (`done`) changes and `--fetch` waits for a fresh look at the remote. After printing it starts a hidden, detached `weave change refresh --root <main>` at most once a minute (`WEAVE_NO_BACKGROUND_REFRESH=1` turns this off). `close` and `switch` handle folders deleted or moved by hand. See [change-folder-states](../../../change-workflow/features/change-folder-states/behavior.md). In in-place checkouts `list` behaves as before.
 
 `weave adr` records long-lived engineering decisions. See [recorded-decisions](../../../change-workflow/features/recorded-decisions/behavior.md):
 
@@ -512,7 +514,8 @@ Expected outcome: Commander rejects the unknown option or subcommand. The recove
 ### Source Anchors
 
 - Context resolver: `src/lib/workspace-mode.ts` (`findWorkspaceMode`, `resolveChangeContext`)
-- Change command library: `src/lib/changes.ts` (`createChange`, `currentChange`, `statusChange`, `progressChange`, `knowledgeChange`)
+- Change command library: `src/lib/changes.ts` (`createChange`, `currentChange`, `statusChange`, `progressChange`, `knowledgeChange`, `listChanges`, `closeChange`)
+- Change states and refresh: `src/lib/change-facts.ts`, `src/lib/change-states.ts`, `src/lib/landed.ts`, `src/lib/change-refresh.ts`
 - Task prepare library: `src/lib/tasks.ts`, `src/lib/task-prepare.ts`
 - CLI command definitions: `src/commands/change.ts`, `src/commands/artifact.ts`, `src/commands/task.ts`, `src/commands/doctor.ts`
 - Tests: `tests/changes.test.ts`, `tests/task-prepare.test.ts`, `tests/tasks.test.ts`, `tests/cli-change-progress.test.ts`, `tests/cli-change-staleness.test.ts`, `tests/cli-skills.test.ts`, `tests/cli-tier1-notices.test.ts`
@@ -651,4 +654,5 @@ Expected outcome: Weave recognizes that `billing` is registered but missing loca
 - 2026-06-04: Added a Command Surface overview and per-command Options tables, dispatch decision table for `weave workspace`, sample text and JSON outputs for both modes, and an explicit `file://` URL scheme entry in `weave add`. Documented `git clone -- <url> <dest>` separator as an intentional injection guard.
 - 2026-06-07 (change `260607-vuwa-architecture-skill-update`): `ensureWeaveScaffold` now creates `.weave/architecture-considerations.md` as user-owned architecture guidance during init and scaffold repair paths.
 - 2026-06-08 (change `260608-78sp-fix-weave-add`): Workspace `weave add` now treats registered-but-missing repo paths as local materialization targets for both git URLs and local paths instead of duplicate adds.
+- 2026-11-09 (change `261107-4oq6-flag-stale-change-folders-in-weave`): `weave change list` gained `--all`, `--fetch`, per-change states, and a hidden background `weave change refresh`.
 - 2026-07-21 (change `260721-6d48-fix-init`): Cloned Weave workspaces now work without `weave init`. `weave init` is a safe no-op when `.weave/workspace.yml` already exists up the tree (no re-scaffold, no repo move, no session write). `weave add` in repo mode lazily creates a session containing only the target folder when no session exists. Repo-mode `weave workspace` with no session derives the workspace-root folder without writing. The `no_session` JSON status is renamed to `not_initialized` and is emitted only in the genuine uninitialized case.
