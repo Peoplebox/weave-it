@@ -222,6 +222,13 @@ export async function checkLanded(
     if (!resolved && defaultBranch && branch !== defaultBranch) {
       fellBack = true;
       resolved = await resolveTarget(input.repoPath, defaultBranch, hasOrigin);
+    } else if (resolved && defaultBranch && branch !== defaultBranch) {
+      // A stacked change whose parent branch has itself landed in the default branch is
+      // measured against the default branch from then on: that's where its work goes next.
+      const onDefault = await resolveTarget(input.repoPath, defaultBranch, hasOrigin);
+      if (onDefault && (await isAncestor(input.repoPath, resolved.target.sha, onDefault.target.sha))) {
+        resolved = onDefault;
+      }
     }
     if (!resolved) {
       return { ...empty, result: "unchecked", method: null, reason: "couldn't find the branch to compare against", fellBack, defaultBranch: defaultBranch ?? null };
@@ -284,7 +291,10 @@ async function computeLanded(
   }
 
   // 5. Newer commits: walk back along the branch for a commit whose work landed.
-  const from = baseCommit ?? (await mergeBase(repoPath, target.sha, tip));
+  // The walk starts at the merge base, not the recorded fork point: after a rebase onto a
+  // newer target, the target's own commits sit between the fork point and the tip and are
+  // not this change's work.
+  const from = await mergeBase(repoPath, target.sha, tip);
   const range = from ? `${from}..${tip}` : tip;
   const commits = await firstParentCommits(repoPath, range, newerCommitsWalkLimit + 1);
   if (!commits) return { result: "unchecked", method: null, reason: "git rev-list failed" };
@@ -298,7 +308,7 @@ async function computeLanded(
   // Without a fork point, a true merge followed by more commits moves the merge base up to
   // the merged commit. A merge base that reached the target through a merge commit's side
   // parent, rather than along its own line, is branch work that landed.
-  if (!baseCommit && from && from !== tip) {
+  if (from && from !== tip && from !== baseCommit) {
     const onLine = await onFirstParentLine(repoPath, from, target.sha);
     if (onLine === false) return { result: "landed_with_newer_commits", method: "merged", reason: null };
   }

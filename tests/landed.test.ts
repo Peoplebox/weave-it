@@ -186,6 +186,38 @@ describe("checkLanded", () => {
     });
   });
 
+  it("measures a stacked change against main once its parent branch has landed there", async () => {
+    const repo = await repoFixture();
+    await git(repo.work, ["checkout", "-q", "-b", "change/parent"]);
+    const parentTip = await commitFile(repo.work, "parent.txt", "parent\n");
+    await git(repo.work, ["push", "-q", "-u", "origin", "change/parent"]);
+    // The parent lands in main, the child is rebased onto main and fast-forwarded in.
+    await git(repo.work, ["checkout", "-q", "main"]);
+    await git(repo.work, ["merge", "-q", "--ff-only", "change/parent"]);
+    await git(repo.work, ["checkout", "-q", "-b", "change/child"]);
+    const tip = await commitFile(repo.work, "child.txt", "child\n");
+    await git(repo.work, ["checkout", "-q", "main"]);
+    await git(repo.work, ["merge", "-q", "--ff-only", "change/child"]);
+    await pushMain(repo);
+    const base: BaseRepoRecord = { base: "origin/change/parent", base_commit: parentTip, source: "created" };
+
+    expect(await checkLanded(input(repo, "child", tip, base))).toMatchObject({ result: "landed", method: "merged", target: { branch: "main" } });
+  });
+
+  it("doesn't count the target's own commits after a rebase onto a newer target", async () => {
+    const repo = await repoFixture();
+    const { base } = await changeBranch(repo, "a");
+    await commitFile(repo.work, "main-1.txt", "m1\n");
+    await commitFile(repo.work, "main-2.txt", "m2\n");
+    await pushMain(repo);
+    await git(repo.work, ["checkout", "-q", "change/a"]);
+    await git(repo.work, ["rebase", "-q", "origin/main"]);
+    const tip = await git(repo.work, ["rev-parse", "HEAD"]);
+    await git(repo.work, ["checkout", "-q", "main"]);
+
+    expect(await checkLanded(input(repo, "a", tip, base))).toMatchObject({ result: "not_landed" });
+  });
+
   it("falls back to the default branch when the starting branch is gone on origin", async () => {
     const repo = await repoFixture();
     const { tip, base } = await changeBranch(repo, "a");
