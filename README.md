@@ -30,7 +30,7 @@ Lanes can be skipped when a change does not need them. Cross-cutting helpers (`w
   - `weave-questions` writes `questions.md`: two to eight descriptive questions about the current code, docs, and dependencies. They never describe the planned change.
   - `weave-research` answers them in `research.md`, ideally in a fresh session, using read-only research sub-agents. It reads only `questions.md`, so the research stays objective.
   - Progressing these lanes never moves `stage`; they feed later lanes as `--source research`.
-  - With `questions_to_research` on (the default), `weave-questions` hands off to `weave advance`, which starts `weave-research` in a fresh background session.
+  - With `questions_to_research` on (the default), `weave-questions` calls `weave advance` and runs `weave-research` as a fresh sub-agent of your own agent.
 - **exploration** — brainstorm product directions and settle on a product shape.
   - Skill: `weave-explore`. Opens with two to four directions, talks them through in plain product language, and writes the shape to `exploration.md` once you pick one.
 - **prd** — write the requirements from the agreed product shape in `prd.md`.
@@ -632,7 +632,7 @@ When the lane is progressed again, `weave change status` reports the verdict as 
 
 ### Auto-advance
 
-`weave advance` starts the next lifecycle phase of the active change in a fresh, non-interactive agent session, so a phase that needs no decisions from you does not wait for you to open a new session.
+`weave advance` starts the next lifecycle phase of the active change in a fresh session, so a phase that needs no decisions from you does not wait for you to open one. It works with whatever agent you use: by default Weave starts no agent itself. It records the run and hands the phase back to the agent that called it, which runs it as a fresh sub-agent with its own tools (Claude Code's Agent tool, Codex sub-agents, opencode's `subagent` tool). The sub-agent's progress shows in your session, and anything it asks permission for comes to you.
 
 Each transition between lanes has a flag under `status.yml.auto_advance`:
 
@@ -654,15 +654,27 @@ Missing flags read as off. `weave change auto-advance` lists every transition; `
 6. `not_started`: no run of the next lane has started since that progress, none is still running, and the next lane was not already progressed after it.
 
 ```bash
-weave advance --dry-run          # print each condition and the decision
-weave advance                    # run the phase and wait for it
-weave advance --detach           # run it in the background (what weave-questions uses)
+weave advance --dry-run              # print each condition and the decision
+weave advance --json                 # record the run and return the handoff brief
+weave advance --launch background    # Weave starts a headless session itself; same as --detach
 weave advance --transition questions_to_research --once
+weave change run log --follow        # readable progress of a background run
 ```
 
-Every phase run is logged under `status.yml.runs` with `lane`, `skill`, `agent`, `session_id`, `trigger`, `transition`, `upstream_updated_at`, `started_at`, `finished_at`, and `result`. A run `succeeded` when the session exited cleanly and progressed its lane, is `incomplete` when it exited cleanly without progress, and `failed` otherwise. Because a run pins the upstream progress it answered, the same update never starts a phase twice; `--retry-failed` lets a failed run start again. Skills started by hand can log runs with `weave change run start` and `weave change run finish`. Session output goes to `~/.weave/runs/<change-id>/<run-id>.log`.
+How the phase starts (`--launch`, or `advance.launch` in `.weave/workspace.yml`):
 
-Sessions are launched through an agent adapter (`--agent`, default `claude`, which runs `claude -p "use the <skill> skill for change <id>"` with a Weave-chosen `--session-id`). A non-interactive session cannot ask for permissions, so allow it to edit the change folder and run `weave` in your agent's settings, or pass `--permission-mode <mode>`.
+- `handoff` (default): returns `steps[0].handoff` with the run id and a self-contained `brief`. The calling skill starts one fresh sub-agent (never a fork of its conversation, so research stays independent of what was discussed) with exactly that brief, waits for it, then runs `weave advance --finish-run <run-id> --launch handoff --once`. If the agent cannot start sub-agents, the skill gives you the brief to paste into a new session.
+- `here`, `terminal`, `background`: Weave starts the session itself, for scripts, CI, or people who prefer it. These need an agent you chose: `--agent claude`, `advance.agent: claude`, or `advance.command` for any other agent CLI, such as `advance.command: pi "{prompt}"` (the prompt replaces `{prompt}`). `here` runs it interactively in your terminal; `terminal` opens it in a new visible terminal (a herdr tab inside herdr, a tmux window inside tmux, otherwise an iTerm2 or Terminal window on macOS); `background` runs it headless, streaming its events so `weave change run log <run-id> --follow` shows lines like `Read src/lib/worktrees.ts` or `Agent weave-locator: find close logic`, and how many tool calls were blocked.
+
+A run finishes when its session records its lane with `weave change progress`, even while that session stays open. When a session ends without recording it, the run is `incomplete`.
+
+### What phases may do without asking
+
+Every phase writes only its own change files and runs `weave`. `weave agent install` and `weave agent update` add exactly those rules to Claude Code's project settings (`.claude/settings.json`), keeping your other settings: `Edit(/wiki/changes/**)`, `Bash(weave *)`, and read-only `git log`, `git show`, `git diff`, `git status`, and `git ls-files`. Sub-agents inherit them, so a research sub-agent saves `research.md` without asking, while editing code or running anything else still asks you. For other agents, allow the same in their own settings: for Codex, a workspace-write sandbox covers the change files and `weave` needs allowing; for opencode, set `permission` for edits and `weave` in its config.
+
+Every phase run is logged under `status.yml.runs` with `lane`, `skill`, `agent`, `session_id`, `trigger`, `transition`, `upstream_updated_at`, `started_at`, `finished_at`, and `result`. Runs also record `launch` (`handoff`, `here`, `terminal`, or `background`) and, for a new terminal, `where`. A run `succeeded` as soon as its lane is progressed, is `incomplete` when its session ended without progress, and `failed` when a background session exited with an error. Because a run pins the upstream progress it answered, the same update never starts a phase twice; `--retry-failed` lets a phase whose run failed or ended incomplete start again. Skills started by hand can log runs with `weave change run start` and `weave change run finish`. Session output goes to `~/.weave/runs/<change-id>/<run-id>.log`.
+
+When Weave starts a session itself, it uses an agent adapter: `claude` runs `claude "use the <skill> skill for change <id>"` with a Weave-chosen `--session-id`, adding `-p` and streaming output for background runs; `advance.command` runs your template. `--permission-mode <mode>` overrides the session's permission mode.
 
 If a target is not a git repo, Weave still writes the change artifacts and reports branch creation as skipped. `switch` blocks when affected git repos have uncommitted changes; `new` does not block so already-started local work can be captured as a new change.
 

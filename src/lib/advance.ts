@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   agentLaunchers as defaultAgentLaunchers,
   type AgentLauncher,
+  type AgentLaunchPlan,
   defaultLaunchAgent,
   formatLaunchPlan,
 } from "./agent-launchers.js";
@@ -16,6 +17,7 @@ import {
   type ChangeSummary,
   ChangeCommandError,
   finishChangeRun,
+  newRunId,
   type PhaseRun,
   type RunResult,
   startChangeRun,
@@ -30,6 +32,7 @@ import {
   lifecycleTransitionIds,
   type LifecycleTransitionId,
 } from "./lifecycle-transitions.js";
+import { findTerminalOpener, shellQuote, type TerminalOpener } from "./terminal-launch.js";
 import { getUserWeaveDir } from "./user-paths.js";
 
 // Verdicts that let the next phase build on a stress-tested shape.
@@ -71,6 +74,22 @@ export interface AdvanceStep {
   run?: PhaseRun;
   log?: string;
   detached?: boolean;
+  // Set when the phase was opened in a new visible terminal.
+  where?: string;
+  // Set when the phase is handed to the calling agent to run as a fresh sub-agent.
+  handoff?: PhaseHandoff;
+}
+
+export interface PhaseHandoff {
+  run_id: string;
+  skill: string;
+  lane: ChangeStage;
+  change_id: string;
+  folder: string;
+  // Installed copies of the skill's instructions, for agents that cannot load skills by name.
+  skill_files: string[];
+  // Everything the fresh sub-agent needs; it must not rely on the calling conversation.
+  brief: string;
 }
 
 export interface AdvanceResult {
@@ -88,11 +107,22 @@ export interface DetachedAdvanceRequest {
   logPath: string;
 }
 
+// `handoff` starts nothing: it records the run and returns a brief for the calling agent to
+// run as a fresh sub-agent with its own harness. The others start a session with a launcher:
+// `background` headless (in this process, or detached with `detach`), `here` interactive in
+// this terminal, and `terminal` interactive in a new terminal the person can see.
+export type AdvanceLaunch = "handoff" | "here" | "terminal" | "background";
+
 export interface AdvanceOptions {
   cwd: string;
   transition?: string;
   dryRun?: boolean;
   detach?: boolean;
+  launch?: AdvanceLaunch;
+  terminalOpeners?: TerminalOpener[];
+  runInteractive?: (plan: AgentLaunchPlan, cwd: string) => Promise<number>;
+  // How the session's wrapper calls Weave back when it ends; defaults to this process's CLI.
+  weaveCommand?: string[];
   once?: boolean;
   retryFailed?: boolean;
   agent?: string;
@@ -164,11 +194,18 @@ async function advanceStep(options: AdvanceOptions): Promise<{ step: AdvanceStep
   const launcher = launchers[agent];
   const context = await activeChangeContext({ cwd: options.cwd, sessionPath: options.sessionPath });
 
+  const handoff = options.launch === "handoff";
   if (options.dryRun) {
     const evaluations = await evaluateTransitions(context.change, options);
-    return { step: { evaluations, decision: decide(evaluations, context.change, agent, launcher) }, change: context.change };
+    return {
+      step: { evaluations, decision: decide(evaluations, context.change, handoff ? handoffAgent(options) : agent, handoff ? undefined : launcher) },
+      change: context.change,
+    };
   }
 
+  if (handoff) {
+    return handoffStep(options, context.target.path);
+  }
   if (!launcher) {
     throw unsupportedAgent(agent, launchers);
   }
@@ -188,17 +225,28 @@ async function advanceStep(options: AdvanceOptions): Promise<{ step: AdvanceStep
     }
 
     const chosen = evaluations.find((evaluation) => evaluation.transition === decision.transition)!;
+    const launch = options.launch ?? "background";
+    const runId = newRunId(chosen.to, now(options), options.randomId);
+    const sessionId = launcher.acceptsSessionId ? (options.sessionIdFactory ?? randomUUID)() : undefined;
+    // A visible terminal opens before the run is recorded, so a terminal that fails to open
+    // leaves no run behind to block the next attempt.
+    if (launch === "terminal") {
+      const opened = await openPhaseTerminal(options, launcher, { runId, sessionId, skill: chosen.skill, lane: chosen.to, change });
+      step.where = opened.where;
+    }
     const started = await startChangeRun({
       cwd: options.cwd,
+      id: runId,
       lane: chosen.to,
       skill: chosen.skill,
       agent,
-      sessionId: launcher.acceptsSessionId ? (options.sessionIdFactory ?? randomUUID)() : undefined,
+      sessionId,
       trigger: "auto-advance",
       transition: chosen.transition,
       upstreamUpdatedAt: chosen.upstream_updated_at,
+      launch,
+      ...(step.where ? { where: step.where } : {}),
       now: now(options),
-      randomId: options.randomId,
       sessionPath: options.sessionPath,
     });
     step.run = started.run;
@@ -208,6 +256,15 @@ async function advanceStep(options: AdvanceOptions): Promise<{ step: AdvanceStep
   }
 
   const run = step.run!;
+  if (options.launch === "terminal") {
+    return { step: { ...step, detached: true }, change };
+  }
+  if (options.launch === "here") {
+    const plan = launcher.interactive({ cwd: options.cwd, prompt: advancePrompt(run.skill, change.id), sessionId: run.session_id, permissionMode: options.permissionMode });
+    await (options.runInteractive ?? runInteractiveSession)(plan, options.cwd);
+    const finished = await finishLaunchedRun({ ...options, runId: run.id });
+    return { step: { ...step, run: finished.run }, change: finished.change };
+  }
   if (options.detach) {
     const logPath = runLogPath(change.id, run.id, options.env);
     (options.spawnDetached ?? spawnDetachedAdvance)({
@@ -227,6 +284,83 @@ async function advanceStep(options: AdvanceOptions): Promise<{ step: AdvanceStep
 
   const executed = await executeRun({ ...options, runId: run.id });
   return { step: { ...step, run: executed.step.run, log: executed.step.log }, change: executed.change };
+}
+
+// Records the run and returns the brief; the calling agent starts the sub-agent itself.
+async function handoffStep(options: AdvanceOptions, root: string): Promise<{ step: AdvanceStep; change: ChangeSummary }> {
+  const agent = handoffAgent(options);
+  const release = await acquireAdvanceLock((await activeChangeContext({ cwd: options.cwd, sessionPath: options.sessionPath })).change.id, options);
+  try {
+    const { change } = await activeChangeContext({ cwd: options.cwd, sessionPath: options.sessionPath });
+    const evaluations = await evaluateTransitions(change, options);
+    const decision = decide(evaluations, change, agent, undefined);
+    if (!decision.fire) {
+      return { step: { evaluations, decision }, change };
+    }
+    const chosen = evaluations.find((evaluation) => evaluation.transition === decision.transition)!;
+    const started = await startChangeRun({
+      cwd: options.cwd,
+      lane: chosen.to,
+      skill: chosen.skill,
+      agent,
+      trigger: "auto-advance",
+      transition: chosen.transition,
+      upstreamUpdatedAt: chosen.upstream_updated_at,
+      launch: "handoff",
+      now: now(options),
+      randomId: options.randomId,
+      sessionPath: options.sessionPath,
+    });
+    const skillFiles = await installedSkillFiles(root, chosen.skill);
+    const handoff: PhaseHandoff = {
+      run_id: started.run.id,
+      skill: chosen.skill,
+      lane: chosen.to,
+      change_id: change.id,
+      folder: root,
+      skill_files: skillFiles,
+      brief: phaseBrief({ skill: chosen.skill, lane: chosen.to, changeId: change.id, folder: root, runId: started.run.id, skillFiles }),
+    };
+    return { step: { evaluations, decision, run: started.run, handoff }, change: started.change };
+  } finally {
+    await release();
+  }
+}
+
+// The brief stands alone on purpose: a phase such as research must not see the conversation
+// that decided what to build, only what is written in the change folder and the code.
+export function phaseBrief(input: { skill: string; lane: ChangeStage; changeId: string; folder: string; runId: string; skillFiles: string[] }): string {
+  return [
+    `Run the ${input.skill} skill for Weave change ${input.changeId}.`,
+    "",
+    `Work in ${input.folder}. The change's files are in wiki/changes/${input.changeId}/.`,
+    input.skillFiles.length > 0
+      ? `If you cannot load the skill by name, read its instructions from ${input.skillFiles.join(" or ")} and follow them exactly.`
+      : `Load the ${input.skill} skill by name and follow its instructions exactly.`,
+    "Use only what is written in the change folder and the code. There is no earlier conversation to rely on.",
+    `Write only inside wiki/changes/${input.changeId}/, and change nothing else: no source edits, no scratch scripts, no experiments.`,
+    `Finish the way the skill says, with \`weave change progress ${input.lane}\`. That also completes Weave run ${input.runId}.`,
+  ].join("\n");
+}
+
+async function installedSkillFiles(root: string, skill: string): Promise<string[]> {
+  const candidates = [
+    path.join(".claude", "skills", skill, "SKILL.md"),
+    path.join(".agents", "skills", skill, "SKILL.md"),
+    path.join(".opencode", "commands", `${skill}.md`),
+  ];
+  const found: string[] = [];
+  for (const candidate of candidates) {
+    if (await pathExists(path.join(root, candidate))) found.push(candidate);
+  }
+  return found;
+}
+
+// The agent a handoff runs in is whichever one called `weave advance`. Claude Code marks its
+// sessions; others are recorded as the calling agent unless `--agent` names them.
+function handoffAgent(options: AdvanceOptions): string {
+  if (options.agent) return options.agent;
+  return (options.env ?? process.env).CLAUDECODE === "1" ? "claude" : "calling-agent";
 }
 
 async function executeRun(options: ExecuteRunOptions): Promise<{ step: AdvanceStep; change: ChangeSummary }> {
@@ -270,18 +404,80 @@ async function executeRun(options: ExecuteRunOptions): Promise<{ step: AdvanceSt
     launchError = error;
   }
 
-  const finished = await finishChangeRun({
-    cwd: options.cwd,
-    runId: run.id,
-    result,
-    now: now(options),
-    sessionPath: options.sessionPath,
-  });
+  // `weave change progress` already finishes the run when the session records its lane.
+  const latest = await activeChangeContext({ cwd: options.cwd, sessionPath: options.sessionPath });
+  const recorded = latest.change.runs.find((candidate) => candidate.id === run.id);
+  const finished =
+    recorded && recorded.result !== "running" && !launchError
+      ? { run: recorded, change: latest.change }
+      : await finishChangeRun({ cwd: options.cwd, runId: run.id, result, now: now(options), sessionPath: options.sessionPath });
   if (launchError) {
     throw launchError;
   }
 
   return { step: { evaluations: [], decision, run: finished.run, log: logPath }, change: finished.change };
+}
+
+// Called when an interactive phase session ends. The run succeeded if the session recorded
+// its lane (which normally finished the run already); otherwise it ended incomplete.
+export async function finishLaunchedRun(options: ExecuteRunOptions): Promise<{ run: PhaseRun; change: ChangeSummary }> {
+  const context = await activeChangeContext({ cwd: options.cwd, sessionPath: options.sessionPath });
+  const run = context.change.runs.find((candidate) => candidate.id === options.runId);
+  if (!run) {
+    throw new ChangeCommandError("run_not_found", `No run ${options.runId} recorded for ${context.change.id}.`, { run: options.runId });
+  }
+  if (run.result !== "running") {
+    return { run, change: context.change };
+  }
+  const lane = context.change.artifacts[run.lane];
+  const result = lane && lane.updated_at >= run.started_at ? "succeeded" : "incomplete";
+  const finished = await finishChangeRun({ cwd: options.cwd, runId: run.id, result, now: now(options), sessionPath: options.sessionPath });
+  return { run: finished.run, change: finished.change };
+}
+
+// Ends an interactive run, then keeps advancing unless `once` is set.
+export async function finishAndAdvance(options: ExecuteRunOptions & { launch?: AdvanceLaunch }): Promise<AdvanceResult> {
+  const finished = await finishLaunchedRun(options);
+  const step: AdvanceStep = {
+    evaluations: [],
+    decision: { fire: true, skill: finished.run.skill, lane: finished.run.lane, agent: finished.run.agent, reason: `finished ${finished.run.skill}` },
+    run: finished.run,
+  };
+  const steps = [step];
+  if (!options.once && finished.run.result === "succeeded") {
+    steps.push(...(await advanceChange({ ...options, detach: false })).steps);
+  }
+  return advanceResult(finished.change.id, false, steps);
+}
+
+async function openPhaseTerminal(
+  options: AdvanceOptions,
+  launcher: AgentLauncher,
+  input: { runId: string; sessionId?: string; skill: string; lane: ChangeStage; change: ChangeSummary },
+): Promise<{ where: string }> {
+  const opener = await findTerminalOpener(options.env ?? process.env, options.terminalOpeners);
+  if (!opener) {
+    throw new ChangeCommandError("no_terminal", "No terminal could be opened for the next phase. Run `weave advance` yourself in a terminal to start it there.");
+  }
+  const plan = launcher.interactive({ cwd: options.cwd, prompt: advancePrompt(input.skill, input.change.id), sessionId: input.sessionId, permissionMode: options.permissionMode });
+  const weave = options.weaveCommand ?? [process.execPath, process.argv[1] ?? "weave"];
+  // When the session ends, Weave records how the run went and starts any next phase.
+  const command = [
+    formatLaunchPlan(plan),
+    [...weave, "advance", "--finish-run", input.runId, ...(options.once ? ["--once"] : [])].map(shellQuote).join(" "),
+  ].join("; ");
+  const token = input.change.id.split("-")[1] ?? input.change.id;
+  return opener.open({ cwd: options.cwd, title: `${input.skill} ${token}`, command }, options.env ?? process.env);
+}
+
+function runInteractiveSession(plan: AgentLaunchPlan, cwd: string): Promise<number> {
+  const env = { ...process.env };
+  delete env.CLAUDECODE;
+  return new Promise((resolve, reject) => {
+    const child = spawn(plan.command, plan.args, { cwd, env, stdio: "inherit" });
+    child.once("error", (error) => reject(new ChangeCommandError("agent_launch_failed", `Could not start ${plan.command}: ${error.message}`)));
+    child.once("close", (code) => resolve(code ?? 1));
+  });
 }
 
 async function evaluateTransition(
@@ -367,7 +563,11 @@ function notStartedCondition(
   }
 
   const since = change.runs.find(
-    (run) => run.lane === transition.to && run.started_at >= upstreamUpdatedAt && !(retryFailed && run.result === "failed"),
+    // A failed or incomplete run saved nothing, so --retry-failed may start the phase again.
+    (run) =>
+      run.lane === transition.to &&
+      run.started_at >= upstreamUpdatedAt &&
+      !(retryFailed && (run.result === "failed" || run.result === "incomplete")),
   );
   if (since) {
     return {
@@ -535,12 +735,35 @@ function formatAdvanceMessage(changeId: string, dryRun: boolean, steps: AdvanceS
       lines.push(`Decision: no fire (${decision.reason})`);
       continue;
     }
+    if (step.handoff) {
+      lines.push(
+        `Ready: ${step.handoff.skill} (run ${step.handoff.run_id}).`,
+        "Start it as a fresh sub-agent, not a fork of this conversation, with this brief as its only input:",
+        "",
+        ...step.handoff.brief.split("\n").map((line) => `  ${line}`),
+        "",
+        "If you cannot start sub-agents, ask the person to open a new session and paste the brief.",
+        `When the sub-agent returns, run: weave advance --finish-run ${step.handoff.run_id} --launch handoff --once`,
+      );
+      continue;
+    }
     if (dryRun) {
-      lines.push(`Decision: fire. Would start ${decision.skill} in a fresh ${decision.agent} session:`, `  ${decision.command ?? "(no launcher)"}`);
+      lines.push(
+        decision.command
+          ? `Decision: fire. Would start ${decision.skill} in a fresh ${decision.agent} session:\n  ${decision.command}`
+          : `Decision: fire. Would hand ${decision.skill} to a fresh sub-agent.`,
+      );
+      continue;
+    }
+    if (run && step.where) {
+      lines.push(`Started ${run.skill} in ${step.where} (run ${run.id}).`, "The session is interactive: watch it there and approve its file writes.");
       continue;
     }
     if (run && step.detached) {
-      lines.push(`Started ${run.skill} in a fresh background ${run.agent} session (run ${run.id}).`, `Log: ${step.log}`);
+      lines.push(
+        `Started ${run.skill} in a fresh background ${run.agent} session (run ${run.id}).`,
+        `Watch it with: weave change run log ${run.id} --follow`,
+      );
       continue;
     }
     if (run) {

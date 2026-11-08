@@ -1,3 +1,4 @@
+import { ensureClaudePhasePermissions } from "./agent-permissions.js";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
@@ -168,7 +169,7 @@ export async function installAgentSkills(options: AgentSkillOptions): Promise<Sk
 
   await saveAgentsManifest(options.cwd, manifest);
 
-  return summarize(results);
+  return withPhasePermissions(options, summarize(results));
 }
 
 export async function updateAgentSkills(options: AgentSkillOptions): Promise<SkillOperationSummary> {
@@ -184,7 +185,7 @@ export async function updateAgentSkills(options: AgentSkillOptions): Promise<Ski
 
   await saveAgentsManifest(options.cwd, manifest);
 
-  return summarize(results);
+  return withPhasePermissions(options, summarize(results));
 }
 
 export async function resetAgentSkills(options: ResetAgentSkillOptions): Promise<SkillOperationSummary> {
@@ -720,6 +721,20 @@ function result(
   message: string,
 ): SkillOperationResult {
   return { agent, kind: artifact.kind, skill: artifact.name, path, status, message };
+}
+
+// Claude Code gets the allow rules Weave phases need, so a phase run as a sub-agent can save
+// its artifact without asking. Other agents' permission formats are documented, not written.
+async function withPhasePermissions(options: AgentSkillOptions, summary: SkillOperationSummary): Promise<SkillOperationSummary> {
+  if (!resolveAgentTargets(options.cwd, options.agent).some((target) => target.agent === "claude")) {
+    return summary;
+  }
+  const permissions = await ensureClaudePhasePermissions(options.cwd);
+  if (permissions.added.length === 0) {
+    return summary;
+  }
+  const line = `Allowed Weave phases to write change files and run weave in ${permissions.path}: ${permissions.added.join(", ")}`;
+  return { ...summary, message: summary.message ? `${summary.message}\n${line}` : line };
 }
 
 function summarize(results: SkillOperationResult[]): SkillOperationSummary {

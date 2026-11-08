@@ -401,8 +401,10 @@ describe("agent skills", () => {
     expect(skill.content).toContain("wiki/changes/<change-id>/questions.md");
     expect(skill.content).toContain("weave change progress questions --source discussion --json");
     expect(skill.content).toContain("Next step: start a fresh session and run weave-research.");
-    expect(skill.content).toContain("weave advance --transition questions_to_research --detach --json");
-    expect(skill.content).toContain("Auto-advance started weave-research in a fresh background session (run <run-id>).");
+    expect(skill.content).toContain("weave advance --transition questions_to_research --json");
+    expect(skill.content).toContain("do not run the brief in this session yourself");
+    expect(skill.content).toContain("Start one **fresh** sub-agent with your agent's own sub-agent tool");
+    expect(skill.content).toContain("weave advance --finish-run <run-id> --launch handoff --once --json");
     expect(skill.content).toContain("ask what should be built, changed, or improved");
     await expect(
       readFile(path.join(process.cwd(), "templates", "skills", "weave-questions", "questions-template.md"), "utf8"),

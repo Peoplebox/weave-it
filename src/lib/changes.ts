@@ -102,6 +102,8 @@ export type StressTestRecords = Partial<Record<StressTestLane, StressTestRecord>
 export const runResults = ["running", "succeeded", "incomplete", "failed"] as const;
 export const runTriggers = ["auto-advance", "manual"] as const;
 export type RunResult = (typeof runResults)[number];
+export const runLaunches = ["handoff", "here", "terminal", "background"] as const;
+export type RunLaunch = (typeof runLaunches)[number];
 export type RunTrigger = (typeof runTriggers)[number];
 export type FinishedRunResult = Exclude<RunResult, "running">;
 
@@ -114,6 +116,11 @@ export interface PhaseRun {
   trigger: RunTrigger;
   transition?: LifecycleTransitionId;
   upstream_updated_at?: string;
+  // How the session was started: handed to the person's own agent as a fresh sub-agent
+  // (`handoff`), in the terminal that ran `weave advance` (`here`), in a new visible
+  // terminal (`terminal`, with `where` naming it), or headless (`background`).
+  launch?: RunLaunch;
+  where?: string;
   started_at: string;
   finished_at: string | null;
   result: RunResult;
@@ -839,6 +846,15 @@ export async function progressChange(options: ProgressChangeOptions): Promise<Pr
   if (knowledge) {
     Object.assign(nextStatus, { knowledge });
   }
+  // Recording a lane's progress is what finishes its running phase, so a run started in an
+  // interactive session is marked done even while that session stays open.
+  if (existing.runs.some((run) => run.lane === options.stage && run.result === "running")) {
+    Object.assign(nextStatus, {
+      runs: existing.runs.map((run) =>
+        run.lane === options.stage && run.result === "running" ? { ...run, finished_at: invalidatedAt, result: "succeeded" } : run,
+      ),
+    });
+  }
 
   await writeFile(statusPath, YAML.stringify(nextStatus));
   const updated = await readChangeMetadata(context.change.changePath, context.change.id);
@@ -1085,6 +1101,10 @@ export interface StartChangeRunOptions {
   trigger?: RunTrigger;
   transition?: LifecycleTransitionId;
   upstreamUpdatedAt?: string;
+  launch?: RunLaunch;
+  where?: string;
+  // Lets the caller hand the id to a session before the run is recorded.
+  id?: string;
   now?: Date;
   randomId?: () => string;
   sessionPath?: string;
@@ -1103,7 +1123,7 @@ export async function startChangeRun(options: StartChangeRunOptions): Promise<Ch
   const context = await activeChangeContext(options);
 
   const run: PhaseRun = {
-    id: `${options.lane}-${formatRunTimestamp(now)}-${(options.randomId ?? randomChangeIdPart)()}`,
+    id: options.id ?? newRunId(options.lane, now, options.randomId),
     lane: options.lane,
     skill: options.skill,
     agent: options.agent,
@@ -1111,6 +1131,8 @@ export async function startChangeRun(options: StartChangeRunOptions): Promise<Ch
     trigger: options.trigger ?? "manual",
     ...(options.transition ? { transition: options.transition } : {}),
     ...(options.upstreamUpdatedAt ? { upstream_updated_at: options.upstreamUpdatedAt } : {}),
+    ...(options.launch ? { launch: options.launch } : {}),
+    ...(options.where ? { where: options.where } : {}),
     started_at: now.toISOString(),
     finished_at: null,
     result: "running",
@@ -1127,6 +1149,10 @@ export async function startChangeRun(options: StartChangeRunOptions): Promise<Ch
     run,
     message: `Started run ${run.id}: ${run.skill} for ${run.lane} (${run.agent}).`,
   };
+}
+
+export function newRunId(lane: ChangeStage, now: Date, randomId?: () => string): string {
+  return `${lane}-${formatRunTimestamp(now)}-${(randomId ?? randomChangeIdPart)()}`;
 }
 
 export interface FinishChangeRunOptions {
@@ -1193,10 +1219,19 @@ export async function listChangeRuns(options: CurrentChangeOptions): Promise<Lis
             `Runs for ${context.change.id}:`,
             ...runs.map(
               (run) =>
-                `  ${run.id}  ${run.skill}  ${run.agent}  ${run.result}  ${run.started_at}${run.finished_at ? ` -> ${run.finished_at}` : ""}`,
+                `  ${run.id}  ${run.skill}  ${run.agent}  ${run.result}  ${run.started_at}${run.finished_at ? ` -> ${run.finished_at}` : ""}${
+                  run.result === "running" ? runningHint(run) : ""
+                }`,
             ),
           ].join("\n"),
   };
+}
+
+function runningHint(run: PhaseRun): string {
+  if (run.launch === "terminal") return `\n    open in ${run.where ?? "a terminal"}`;
+  if (run.launch === "here") return "\n    open in the terminal that ran weave advance";
+  if (run.launch === "handoff") return "\n    handed to a sub-agent of the session that ran weave advance";
+  return `\n    watch: weave change run log ${run.id} --follow`;
 }
 
 async function activeChangeSummary(context: ActiveChangeContext): Promise<ChangeSummary> {
@@ -1641,6 +1676,8 @@ function parseRuns(value: unknown): PhaseRun[] {
       trigger: isRunTrigger(entry.trigger) ? entry.trigger : "manual",
       ...(isLifecycleTransitionId(entry.transition) ? { transition: entry.transition } : {}),
       ...(typeof entry.upstream_updated_at === "string" ? { upstream_updated_at: entry.upstream_updated_at } : {}),
+      ...((runLaunches as readonly unknown[]).includes(entry.launch) ? { launch: entry.launch as RunLaunch } : {}),
+      ...(typeof entry.where === "string" ? { where: entry.where } : {}),
       started_at: entry.started_at,
       finished_at: typeof entry.finished_at === "string" ? entry.finished_at : null,
       result: entry.result,

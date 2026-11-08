@@ -4,6 +4,7 @@
 
 | Decision | Title | Status | Applies to |
 | --- | --- | --- | --- |
+| [261108-4z8l-auto-advance-hands-phases-to-the-calling-agent](261108-4z8l-auto-advance-hands-phases-to-the-calling-agent.md) | Auto-advance hands phases to the calling agent | accepted | `src/lib/advance.ts`, `src/commands/advance.ts`, `src/lib/agent-launchers.ts`, `src/lib/agent-permissions.ts` |
 | [261107-ohne-each-change-gets-its-own-worktree-folder](261107-ohne-each-change-gets-its-own-worktree-folder.md) | Each change gets its own folder of worktrees, made with plain git | accepted | `src/lib/worktrees.ts`, `src/lib/changes.ts`, `src/lib/task-prepare.ts`, `src/lib/git.ts` |
 | [261101-qcgh-stress-tests-see-only-what-is-written-down](261101-qcgh-stress-tests-see-only-what-is-written-down.md) | Stress tests see only what is written down | accepted | `templates/skills/weave-stress-test/**`, `templates/agents/weave-challenger.md` |
 | [261101-opav-research-never-reads-intent](261101-opav-research-never-reads-intent.md) | Research never reads the change's intent | accepted | `templates/skills/weave-questions/**`, `templates/skills/weave-research/**` |

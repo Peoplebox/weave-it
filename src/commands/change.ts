@@ -50,6 +50,8 @@ import {
   type CloseChangeResult,
   setupChange,
 } from "../lib/changes.js";
+import { runLogPath } from "../lib/advance.js";
+import { printRunLog } from "../lib/run-log.js";
 import { withNotices } from "../lib/with-notices.js";
 import type { SetupCommand, SetupResult } from "../lib/worktrees.js";
 
@@ -328,6 +330,32 @@ export function changeCommand(): Command {
           sessionId: options.session,
         });
         writeResult(result, options.json ?? false);
+      });
+    });
+
+  run
+    .command("log")
+    .description("Show what a background phase run is doing, as readable lines.")
+    .argument("[run-id]", "run id from `weave change runs`; defaults to the latest run")
+    .option("--follow", "keep printing new lines until the run finishes")
+    .action(async (runId: string | undefined, options: { follow?: boolean }) => {
+      await runAction(false, async () => {
+        const listed = await listChangeRuns({ cwd: process.cwd() });
+        const chosen = runId ? listed.runs.find((candidate) => candidate.id === runId) : listed.runs.at(-1);
+        if (!chosen) {
+          throw new ChangeCommandError("run_not_found", runId ? `No run ${runId} recorded for ${listed.change_id}.` : `No runs recorded for ${listed.change_id}.`);
+        }
+        if (chosen.launch === "terminal" || chosen.launch === "here") {
+          process.stdout.write(`Run ${chosen.id} is an interactive session${chosen.where ? ` in ${chosen.where}` : ""}; watch it there.\n`);
+          return;
+        }
+        await printRunLog({
+          logPath: runLogPath(listed.change_id, chosen.id),
+          follow: options.follow ?? false,
+          write: (line) => process.stdout.write(`${line}\n`),
+          stillRunning: async () =>
+            (await listChangeRuns({ cwd: process.cwd() })).runs.find((candidate) => candidate.id === chosen.id)?.result === "running",
+        });
       });
     });
 

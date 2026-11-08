@@ -37,8 +37,16 @@ export type WorkspaceMetadata = {
   name?: string;
   checkout: CheckoutMode;
   worktrees: WorktreeSettings;
+  // How `weave advance` starts the next phase, and which agent runs it when Weave starts the
+  // session itself (`here`, `terminal`, `background`): a known agent or a command template.
+  advanceLaunch?: AdvanceLaunchSetting;
+  advanceAgent?: string;
+  advanceCommand?: string;
   repos: Record<string, WorkspaceRepoEntry>;
 };
+
+export const advanceLaunchSettings = ["handoff", "here", "terminal", "background"] as const;
+export type AdvanceLaunchSetting = (typeof advanceLaunchSettings)[number];
 
 export function isGitUrl(input: string): boolean {
   return GIT_URL_PATTERN.test(input.trim());
@@ -96,6 +104,7 @@ export async function readWorkspaceMetadata(workspacePath: string): Promise<Work
       name: typeof parsed.name === "string" ? parsed.name : undefined,
       checkout: parsed.checkout === "worktree" ? "worktree" : "in-place",
       worktrees: parseWorktreeSettings(parsed.worktrees),
+      ...parseAdvance(parsed.advance),
       repos,
     };
   } catch {
@@ -110,6 +119,16 @@ function parseWorktreeSettings(value: unknown): WorktreeSettings {
     ...(typeof record.base === "string" && record.base.trim() ? { base: record.base.trim() } : {}),
     copy: parseCopyList(record.copy),
     ...(typeof record.setup === "string" && record.setup.trim() ? { setup: record.setup.trim() } : {}),
+  };
+}
+
+function parseAdvance(value: unknown): Pick<WorkspaceMetadata, "advanceLaunch" | "advanceAgent" | "advanceCommand"> {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const text = (field: unknown) => (typeof field === "string" && field.trim() ? field.trim() : undefined);
+  return {
+    ...((advanceLaunchSettings as readonly unknown[]).includes(record.launch) ? { advanceLaunch: record.launch as AdvanceLaunchSetting } : {}),
+    ...(text(record.agent) ? { advanceAgent: text(record.agent) } : {}),
+    ...(text(record.command) ? { advanceCommand: text(record.command) } : {}),
   };
 }
 

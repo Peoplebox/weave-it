@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -110,7 +110,41 @@ describe("advance CLI", () => {
       "verdict",
       "not_started",
     ]);
-    expect(step.decision).toMatchObject({ fire: true, skill: "weave-research", agent: "claude" });
+    expect(step.decision).toMatchObject({ fire: true, skill: "weave-research" });
+    expect(step.decision.command).toBeUndefined();
+  });
+
+  it("hands the next phase to the calling agent by default", async () => {
+    const { cwd, changePath } = await setup();
+    await mkdir(path.join(cwd, ".claude", "skills", "weave-research"), { recursive: true });
+    await writeFile(path.join(cwd, ".claude", "skills", "weave-research", "SKILL.md"), "---\nname: weave-research\n---\n");
+    await writeFile(path.join(changePath, "questions.md"), "# Research Questions\n\n1. How does export work today?\n");
+    await run(changeCommand, ["progress", "questions", "--source", "discussion", "--json"]);
+
+    const result = await run(advanceCommand, ["--transition", "questions_to_research", "--json"]);
+
+    expect(result).toMatchObject({ status: "ok", fired: true });
+    const [step] = result.steps as { run: Record<string, unknown>; handoff: Record<string, unknown> }[];
+    expect(step.run).toMatchObject({ lane: "research", launch: "handoff", result: "running" });
+    expect(step.handoff).toMatchObject({
+      skill: "weave-research",
+      lane: "research",
+      folder: await realpath(cwd),
+      skill_files: [path.join(".claude", "skills", "weave-research", "SKILL.md")],
+    });
+    expect(step.handoff.brief).toContain("Run the weave-research skill for Weave change");
+    expect(step.handoff.brief).toContain("There is no earlier conversation to rely on.");
+
+    const finished = await run(advanceCommand, ["--finish-run", String(step.run.id), "--once", "--json"]);
+    expect((finished.steps as { run: Record<string, unknown> }[])[0].run).toMatchObject({ id: step.run.id, result: "incomplete" });
+  });
+
+  it("refuses to start a session itself without a configured agent", async () => {
+    await setup();
+
+    const result = await run(advanceCommand, ["--launch", "background", "--json"]);
+
+    expect(result).toMatchObject({ status: "error", code: "missing_launch_agent" });
   });
 
   it("reports an unknown transition as a JSON error", async () => {

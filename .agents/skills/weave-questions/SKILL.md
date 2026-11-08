@@ -92,10 +92,16 @@ Add `--source exploration` when `exploration.md` informed the questions.
 After progress is recorded, let Weave decide whether to start research on its own:
 
 ```bash
-weave advance --transition questions_to_research --detach --json
+weave advance --transition questions_to_research --json
 ```
 
-It starts `weave-research` in a fresh background session only when `auto_advance.questions_to_research` is on for this change, the questions lane was just recorded and is not stale, `questions.md` has substantive content, and no research run has started since this progress. Otherwise it starts nothing and returns `"fired": false`. Run it once; never retry it, and never start `weave-research` in this session yourself.
+It fires only when `auto_advance.questions_to_research` is on for this change, the questions lane was just recorded and is not stale, `questions.md` has substantive content, and no research run has started since this progress. Run it once and never retry it. When it fires, it records a research run and returns a handoff (`steps[0].handoff`): the run id and a self-contained `brief`. Weave does not start any agent; you hand the phase to a fresh sub-agent of your own:
+
+1. Start one **fresh** sub-agent with your agent's own sub-agent tool, in the foreground, and give it exactly the `brief` as its only input. It must not be a fork of this conversation or see it: research has to stay independent of what was discussed about what to build. Do not add context, summaries, or your own instructions to the brief.
+2. Wait for it to finish. It writes `research.md` and records progress, which also completes the run.
+3. Then run `weave advance --finish-run <run-id> --launch handoff --once --json`. It marks the run `incomplete` if the sub-agent stopped without recording research, and does nothing otherwise.
+
+If your agent cannot start sub-agents, do not run the brief in this session yourself. Give the user the brief and ask them to start a new session with it. If the workspace configured Weave to start sessions itself (`advance.launch` of `terminal` or `background`), the result says where the session runs instead of returning a handoff; report that.
 
 # Lifecycle Staleness Verification
 
@@ -148,16 +154,20 @@ not.
 
 Reply with exactly one of these shapes and nothing else.
 
-When `weave advance` returned `"fired": true`:
+When research ran as a sub-agent and finished:
 
 ```text
 Wrote <N> research questions to wiki/changes/<change-id>/questions.md.
 
 You don't need to answer them. They tell weave-research what to look up.
 
-Auto-advance started weave-research in a fresh background session (run <run-id>).
-Check on it with `weave change runs`, and review research.md once it finishes.
+Research ran in a fresh sub-agent (run <run-id>) and wrote wiki/changes/<change-id>/research.md.
+Review it, then start weave-explore (or weave-architect for non-feature changes) in a fresh session.
 ```
+
+When the sub-agent stopped without recording research, say so in one line with what it reported, after the first two paragraphs above.
+
+When your agent could not start sub-agents, end with: `To run research, start a new session and paste this brief:` followed by the brief in a text block.
 
 Otherwise:
 
@@ -169,6 +179,8 @@ You don't need to answer them. They tell weave-research what to look up.
 Next step: start a fresh session and run weave-research.
 (A fresh session keeps the research independent of this conversation about what to build.)
 ```
+
+When Weave started the session itself: for a new terminal (`steps[0].where`), say `Research has started in <where> (run <run-id>).`; for a background run (`steps[0].detached` with no `where`), say `Research has started in the background (run <run-id>). Watch it with: weave change run log <run-id> --follow`.
 
 When the result's conditions include `auto_advance.questions_to_research is off`, add one last line: `To have Weave start research for you next time, run: weave change auto-advance questions_to_research on`.
 

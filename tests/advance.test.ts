@@ -5,8 +5,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import YAML from "yaml";
 import { describe, expect, it, vi } from "vitest";
-import { advanceChange, type AdvanceOptions, evaluateTransitions, resumeAdvanceRun, runLogPath } from "../src/lib/advance.js";
-import { type AgentLauncher, type AgentLaunchRequest, claudeLauncher, formatLaunchPlan } from "../src/lib/agent-launchers.js";
+import { advanceChange, type AdvanceOptions, evaluateTransitions, finishAndAdvance, resumeAdvanceRun, runLogPath } from "../src/lib/advance.js";
+import { type AgentLauncher, type AgentLaunchRequest, backgroundAllowedTools, claudeLauncher, formatLaunchPlan } from "../src/lib/agent-launchers.js";
+import { claudePhaseAllowRules, ensureClaudePhasePermissions } from "../src/lib/agent-permissions.js";
+import { formatRunLogLine } from "../src/lib/run-log.js";
+import type { TerminalOpener, TerminalOpenRequest } from "../src/lib/terminal-launch.js";
 import {
   autoAdvanceChange,
   createChange,
@@ -72,6 +75,7 @@ function mockLauncher(
     acceptsSessionId: true,
     launches,
     plan: (request) => ({ command: "agent", args: ["-p", request.prompt, ...(request.sessionId ? ["--session-id", request.sessionId] : [])] }),
+    interactive: (request) => ({ command: "agent", args: [request.prompt, ...(request.sessionId ? ["--session-id", request.sessionId] : [])] }),
     launch: vi.fn(async (request: AgentLaunchRequest) => {
       launches.push(request);
       if (behaviour.progress === "research") {
@@ -267,7 +271,8 @@ describe("weave advance decisions for questions -> research", () => {
         transition: "questions_to_research",
         upstream_updated_at: at(10).toISOString(),
         started_at: at(20).toISOString(),
-        finished_at: at(20).toISOString(),
+        // Progressing research is what finished the run, at the session's own time.
+        finished_at: at(30).toISOString(),
         result: "succeeded",
       }),
     ]);
@@ -297,17 +302,19 @@ describe("weave advance decisions for questions -> research", () => {
     expect(result.steps[0].decision.reason).toContain("research was already progressed");
   });
 
-  it("records an incomplete run when the session exits without progress, and does not retry it", async () => {
+  it("records an incomplete run when the session exits without progress, and retries it only with retryFailed", async () => {
     const fixture = await setup();
     await writeQuestionsAndProgress(fixture, 10);
     const launcher = mockLauncher(fixture);
 
     const first = await advanceChange(advanceOptions(fixture, launcher));
-    const second = await advanceChange(advanceOptions(fixture, launcher, { retryFailed: true }));
+    const second = await advanceChange(advanceOptions(fixture, launcher));
+    const retried = await advanceChange(advanceOptions(fixture, launcher, { retryFailed: true, randomId: () => "rn02" }));
 
     expect(first.steps[0].run?.result).toBe("incomplete");
     expect(second.fired).toBe(false);
-    expect(launcher.launches).toHaveLength(1);
+    expect(retried.fired).toBe(true);
+    expect(launcher.launches).toHaveLength(2);
   });
 
   it("retries a failed run only with retryFailed", async () => {
@@ -426,8 +433,206 @@ describe("agent launchers", () => {
         "11111111-2222-4333-8444-555555555555",
         "--permission-mode",
         "acceptEdits",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--allowedTools",
+        ...backgroundAllowedTools,
       ],
     });
     expect(formatLaunchPlan(plan)).toContain(`-p 'use the weave-research skill for change ${changeId}'`);
+  });
+
+  it("gives background sessions edits in the change folder and Weave commands by default", () => {
+    const plan = claudeLauncher.plan({ cwd: "/repo", prompt: "use the weave-research skill" });
+
+    expect(plan.args).toEqual(expect.arrayContaining(["--permission-mode", "acceptEdits"]));
+    expect(backgroundAllowedTools).toContain("Bash(weave *)");
+  });
+
+  it("plans an interactive session without print mode", () => {
+    const plan = claudeLauncher.interactive({ cwd: "/repo", prompt: "use the weave-research skill", sessionId: "11111111-2222-4333-8444-555555555555" });
+
+    expect(plan).toEqual({ command: "claude", args: ["use the weave-research skill", "--session-id", "11111111-2222-4333-8444-555555555555"] });
+  });
+});
+
+describe("visible launches", () => {
+  function recordingOpener(available = true) {
+    const opened: TerminalOpenRequest[] = [];
+    const opener: TerminalOpener = {
+      kind: "test",
+      available: async () => available,
+      open: async (request) => {
+        opened.push(request);
+        return { kind: "test", where: "a test tab" };
+      },
+    };
+    return { opener, opened };
+  }
+
+  it("opens the next phase as an interactive session in a new terminal and returns at once", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    const launcher = mockLauncher(fixture);
+    const { opener, opened } = recordingOpener();
+
+    const result = await advanceChange(
+      advanceOptions(fixture, launcher, { launch: "terminal", terminalOpeners: [opener], weaveCommand: ["weave"] }),
+    );
+
+    const run = result.steps[0].run!;
+    expect(run).toMatchObject({ result: "running", launch: "terminal", where: "a test tab" });
+    expect(result.steps[0]).toMatchObject({ detached: true, where: "a test tab" });
+    expect(launcher.launches).toEqual([]);
+    expect(opened[0]).toMatchObject({ cwd: fixture.cwd, title: "weave-research aa01" });
+    expect(opened[0].command).toContain(`agent 'use the weave-research skill for change ${changeId}'`);
+    expect(opened[0].command).toContain(`; weave advance --finish-run ${run.id}`);
+    expect(result.message).toContain("Started weave-research in a test tab");
+  });
+
+  it("records nothing when no terminal can be opened", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    const { opener } = recordingOpener(false);
+
+    await expect(
+      advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "terminal", terminalOpeners: [opener] })),
+    ).rejects.toMatchObject({ code: "no_terminal" });
+    expect((await readStatus(fixture)).runs).toBeUndefined();
+  });
+
+  it("runs the phase interactively here and records whether it progressed its lane", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    const runInteractive = vi.fn(async () => {
+      await writeFile(path.join(fixture.changePath, "research.md"), "# Research\n\nInvoices are exported by the billing job.\n");
+      await progressChange({ cwd: fixture.cwd, stage: "research", sources: ["questions", "codebase"], now: at(30), sessionPath: fixture.session });
+      return 0;
+    });
+
+    const result = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "here", runInteractive, once: true }));
+
+    expect(runInteractive).toHaveBeenCalledWith(
+      { command: "agent", args: [`use the weave-research skill for change ${changeId}`, "--session-id", "11111111-2222-4333-8444-555555555555"] },
+      fixture.cwd,
+    );
+    expect(result.steps[0].run).toMatchObject({ launch: "here", result: "succeeded" });
+  });
+
+  it("marks an interactive run incomplete when its session ends without progress", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    const { opener } = recordingOpener();
+    const started = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "terminal", terminalOpeners: [opener] }));
+    const runId = started.steps[0].run!.id;
+
+    const finished = await finishAndAdvance({ ...advanceOptions(fixture, mockLauncher(fixture)), runId, once: true });
+
+    expect(finished.steps[0].run).toMatchObject({ id: runId, result: "incomplete" });
+  });
+
+  it("finishes a running phase as soon as its lane is progressed", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    const { opener } = recordingOpener();
+    const started = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "terminal", terminalOpeners: [opener] }));
+    await writeFile(path.join(fixture.changePath, "research.md"), "# Research\n\nInvoices are exported by the billing job.\n");
+
+    await progressChange({ cwd: fixture.cwd, stage: "research", sources: ["questions", "codebase"], now: at(40), sessionPath: fixture.session });
+
+    const runs = (await readStatus(fixture)).runs as Array<{ id: string; result: string }>;
+    expect(runs.find((run) => run.id === started.steps[0].run!.id)?.result).toBe("succeeded");
+  });
+});
+
+describe("handoff", () => {
+  it("records the run and returns a self-contained brief without starting anything", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    const launcher = mockLauncher(fixture);
+
+    const result = await advanceChange(advanceOptions(fixture, launcher, { launch: "handoff", env: { ...fixture.env, CLAUDECODE: "1" } }));
+
+    const step = result.steps[0];
+    expect(launcher.launches).toEqual([]);
+    expect(step.run).toMatchObject({ launch: "handoff", agent: "claude", result: "running" });
+    expect(step.handoff).toMatchObject({ run_id: step.run!.id, skill: "weave-research", change_id: changeId, skill_files: [] });
+    expect(step.handoff!.brief).toContain(`Write only inside wiki/changes/${changeId}/`);
+    expect(step.handoff!.brief).toContain(`That also completes Weave run ${step.run!.id}.`);
+    expect(result.message).toContain("Start it as a fresh sub-agent, not a fork of this conversation");
+  });
+
+  it("lets --retry-failed hand off again after an incomplete run", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    const first = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff" }));
+    await finishAndAdvance({ ...advanceOptions(fixture, mockLauncher(fixture)), runId: first.steps[0].run!.id, once: true });
+
+    const blocked = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff" }));
+    const retried = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff", retryFailed: true, randomId: () => "rn02" }));
+
+    expect(blocked.fired).toBe(false);
+    expect(retried.steps[0].handoff).toBeDefined();
+  });
+
+  it("does not hand off the same phase twice while it runs", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+    await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff" }));
+
+    const again = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff" }));
+
+    expect(again.fired).toBe(false);
+    expect(conditionsOf(again)).toMatchObject({ not_started: false });
+  });
+
+  it("records the calling agent generically outside Claude Code", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+
+    const result = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff", env: { ...fixture.env, CLAUDECODE: undefined } }));
+
+    expect(result.steps[0].run?.agent).toBe("calling-agent");
+  });
+});
+
+describe("phase permissions", () => {
+  it("adds only the missing phase rules and keeps existing settings", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "weave-permissions-"));
+    await mkdir(path.join(root, ".claude"));
+    await writeFile(path.join(root, ".claude", "settings.json"), JSON.stringify({ model: "x", permissions: { allow: ["Bash(npm test *)", "Bash(weave *)"], deny: ["Bash(rm *)"] } }));
+
+    const first = await ensureClaudePhasePermissions(root);
+    const second = await ensureClaudePhasePermissions(root);
+
+    const settings = JSON.parse(await readFile(path.join(root, ".claude", "settings.json"), "utf8"));
+    expect(first.added).toEqual(claudePhaseAllowRules.filter((rule) => rule !== "Bash(weave *)"));
+    expect(second.added).toEqual([]);
+    expect(settings).toMatchObject({ model: "x", permissions: { deny: ["Bash(rm *)"] } });
+    expect(settings.permissions.allow).toEqual(["Bash(npm test *)", "Bash(weave *)", ...first.added]);
+  });
+});
+
+describe("run logs", () => {
+  it("turns stream-json events into readable lines", () => {
+    const lines = [
+      { type: "system", subtype: "init", model: "claude-opus-5-5" },
+      { type: "assistant", message: { content: [{ type: "text", text: "Looking at close.\nMore." }, { type: "tool_use", name: "Read", input: { file_path: "src/lib/worktrees.ts" } }] } },
+      { type: "assistant", message: { content: [{ type: "tool_use", name: "Agent", input: { subagent_type: "weave-locator", description: "Find close logic" } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", is_error: true, content: "Permission denied for Write" }] } },
+      { type: "result", subtype: "success", duration_ms: 61_000, permission_denials: [{}, {}] },
+    ].flatMap((event) => formatRunLogLine(JSON.stringify(event)));
+
+    expect(lines).toEqual([
+      "Session started (claude-opus-5-5)",
+      "> Looking at close.",
+      "Read src/lib/worktrees.ts",
+      "Agent weave-locator: Find close logic",
+      "  ! Permission denied for Write",
+      "Finished: success after 61s",
+      "  ! 2 tool calls were blocked because nobody could approve them",
+    ]);
+    expect(formatRunLogLine("plain runner output")).toEqual(["plain runner output"]);
   });
 });

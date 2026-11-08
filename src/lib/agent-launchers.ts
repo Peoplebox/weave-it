@@ -29,9 +29,24 @@ export interface AgentLaunchResult {
 export interface AgentLauncher {
   agent: string;
   acceptsSessionId: boolean;
+  // Headless session for background runs.
   plan(request: Omit<AgentLaunchRequest, "logPath">): AgentLaunchPlan;
+  // Normal interactive session, for a terminal the person can see.
+  interactive(request: Omit<AgentLaunchRequest, "logPath">): AgentLaunchPlan;
   launch(request: AgentLaunchRequest): Promise<AgentLaunchResult>;
 }
+
+// A background session has nobody to approve tool use, so it gets file edits inside the
+// change folder plus the commands a Weave phase needs, and nothing else.
+export const backgroundAllowedTools = [
+  "Bash(weave *)",
+  "Bash(git log *)",
+  "Bash(git show *)",
+  "Bash(git diff *)",
+  "Bash(git status *)",
+  "Bash(git ls-files *)",
+  "Bash(ls *)",
+];
 
 export const claudeLauncher: AgentLauncher = {
   agent: "claude",
@@ -41,6 +56,23 @@ export const claudeLauncher: AgentLauncher = {
       command: "claude",
       args: [
         "-p",
+        request.prompt,
+        ...(request.sessionId ? ["--session-id", request.sessionId] : []),
+        "--permission-mode",
+        request.permissionMode ?? "acceptEdits",
+        // Stream every event to the log as it happens, so `weave change run log` can show progress.
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--allowedTools",
+        ...backgroundAllowedTools,
+      ],
+    };
+  },
+  interactive(request) {
+    return {
+      command: "claude",
+      args: [
         request.prompt,
         ...(request.sessionId ? ["--session-id", request.sessionId] : []),
         ...(request.permissionMode ? ["--permission-mode", request.permissionMode] : []),
@@ -62,7 +94,29 @@ export const agentLaunchers: Record<string, AgentLauncher> = {
   claude: claudeLauncher,
 };
 
+// Library default for callers that pass no agent. The CLI never relies on it: it hands phases
+// to the calling agent unless an agent or command is configured.
 export const defaultLaunchAgent = "claude";
+
+export const customAgentName = "custom";
+
+// Any agent CLI, from `advance.command` in .weave/workspace.yml, for example `pi "{prompt}"`.
+// The prompt replaces `{prompt}`, shell-quoted. The same command serves every launch mode.
+export function commandTemplateLauncher(template: string): AgentLauncher {
+  const plan = (request: Omit<AgentLaunchRequest, "logPath">): AgentLaunchPlan => ({
+    command: "/bin/sh",
+    args: ["-c", template.split("{prompt}").join(shellQuote(request.prompt))],
+  });
+  return {
+    agent: customAgentName,
+    acceptsSessionId: false,
+    plan,
+    interactive: plan,
+    async launch(request) {
+      return { exitCode: await runToLog(plan(request), request.cwd, request.logPath, { ...process.env }) };
+    },
+  };
+}
 
 export function formatLaunchPlan(plan: AgentLaunchPlan): string {
   return [plan.command, ...plan.args.map(shellQuote)].join(" ");
@@ -88,6 +142,6 @@ async function runToLog(plan: AgentLaunchPlan, cwd: string, logPath: string, env
   }
 }
 
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }

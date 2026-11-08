@@ -196,7 +196,7 @@ When there is no valid resume context, make the type-aware recommendation primar
 
 Auto-advance recommendation (from `weave advance --dry-run --json` and `weave change runs --json`):
 
-- A `running` run for the lane you would recommend -> say that phase is already running in a background session (run id, skill, started time) and recommend waiting for it; never recommend starting it again.
+- A `running` run for the lane you would recommend -> say that phase is already running (run id, skill, started time, and where: a sub-agent of the session that handed it off for a `handoff` run, its `where` for a terminal session, or `weave change run log <run-id> --follow` for a background one) and recommend waiting for it; never recommend starting it again.
 - The dry run fires (`"fired": true`) -> keep the recommended skill, and say that auto-advance is on for that transition, so `weave advance` will start it in a fresh session; the user can also run it themselves.
 - The latest run for the lane is `incomplete` or `failed` -> mention it and recommend running the skill in a fresh session; for `failed`, `weave advance --retry-failed` also works.
 - The recommended skill is `weave-explore`, `weave-architect`, `weave-stress-test`, `weave-prd` for `feat`, or `weave-slices` -> say auto-advance never starts it because it needs the user's decisions.

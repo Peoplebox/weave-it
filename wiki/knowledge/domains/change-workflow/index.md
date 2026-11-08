@@ -25,6 +25,7 @@ Sliced changes store work under `task-slices/<NN>-<slug>/`; legacy flat changes 
 
 ## Domain-Wide Behavior
 
+- [auto-advance-launch](domain-wide/auto-advance-launch.md): how `weave advance` hands a phase to the calling agent as a fresh sub-agent (or starts a session itself when configured), how runs finish, the phase permission rules, and `weave change run log`.
 - [change-checkouts](domain-wide/change-checkouts.md): worktree checkouts (a folder of worktrees per change, base branches, copy, approved setup, slots, close) and the in-place branch-switching safeguards.
 - [change-creation-and-stages](domain-wide/change-creation-and-stages.md): `weave change new` scaffolding (feature vs non-feature), the `stage` vocabulary, and the non-lane `started` stage used by non-feature changes.
 - [architecture-artifacts](domain-wide/architecture-artifacts.md): legacy `architecture.md` and folder-mode `architecture/index.md` plus facet files, including shape resolution, conflict handling, and lane-atomic lifecycle behavior.

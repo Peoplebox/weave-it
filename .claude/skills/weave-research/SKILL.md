@@ -14,6 +14,8 @@ Write `wiki/changes/<change-id>/research.md`: a factual map of the system as it 
 
 Your only job is to document what exists, where it lives, how it works, and how it is tested. Do not suggest improvements, critique the code, find root causes, or propose designs unless the user explicitly asks. Later lanes (`weave-explore`, `weave-prd`, `weave-architect`) make decisions; they rely on this document being objective.
 
+Research only reads. The one file it writes is `research.md`, and it writes it with the agent's file write or edit tool, never through shell commands. Do not edit any other file, create scratch scripts, or run experiments to see how something behaves; describe what the code and its tests show, and leave anything only a run could settle under **Open Questions**. Weave allows exactly these writes without asking, so a permission prompt during research means you have stepped outside this job.
+
 # Resolve Context
 
 ```bash
