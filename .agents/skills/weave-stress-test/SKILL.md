@@ -92,6 +92,8 @@ Keep the lens's language throughout. For `exploration`, translate any technical 
 
 Stop asking when the blocking and major challenges are settled, or after about ten questions, whichever comes first. Then list the remaining minor challenges in one message and let the user accept, defer, or discuss them together. The user can say "enough" at any point.
 
+For `exploration`, finish by clearing what would stop the PRD, because the PRD is written afterwards by a session nobody can answer: read **PRD Readiness** and the **Open Questions** marked as blocking, and ask about each that is left, one per message, the same way. Stop when none remain or the user defers them; a deferred blocker keeps the shape `Not ready`.
+
 # Record the Results
 
 Do these in order.
@@ -228,6 +230,22 @@ Never waive on the user's behalf.
 
 A waived test reviewed nothing, so it accepts nothing. Proposed decisions stay `proposed` until the user explicitly confirms them; then run `weave adr status <id> accepted --json`.
 
+## 5. Hand off the PRD
+
+For `exploration` with `holds` or `holds-with-changes`, let Weave decide whether the PRD can be written now:
+
+```bash
+weave advance --transition exploration_to_prd --json
+```
+
+It fires only when `auto_advance.exploration_to_prd` is on, the verdict you just recorded is current and passing, and **PRD Readiness** says `Ready`. When it returns a handoff (`steps[0].handoff`):
+
+1. Start one fresh sub-agent with your agent's own sub-agent tool, in the foreground, with exactly the `brief` as its only input; not a fork of this conversation. If your agent cannot start sub-agents, give the user the brief for a new session and stop here.
+2. If it wrote `prd.md` and recorded progress, the run is complete. Run `weave advance --finish-run <run-id> --launch handoff --once --json` and report the PRD.
+3. If it returned questions instead, run the same `--finish-run` command (it marks the run incomplete), then ask the user each question here, one per message. Write the answers into `exploration.md` as decisions, keep **PRD Readiness** `Ready`, record progress for `exploration` with `--source discussion`, record the verdict again (`holds-with-changes`, reason: the PRD's questions were answered), and run `weave advance --transition exploration_to_prd --json` again for a fresh handoff. Do this at most twice; after that, tell the user to run `weave-prd` in a new session.
+
+When it does not fire, say why in one line from its conditions (for example `PRD Readiness says: Not ready — …`).
+
 # Final Response
 
 Reply with exactly this shape and nothing else:
@@ -239,13 +257,14 @@ Challenges: <N> (<b> blocking, <m> major, <n> minor) — <d> decided, <f> deferr
 Shape updated: <path>
 Notes: <session note path>
 Decisions accepted: <ids, or none>
+PRD: <written to wiki/changes/<change-id>/prd.md (run <run-id>) | not started: <reason>>   (exploration only)
 
 Next step: <next skill>
 ```
 
 Choose the next skill from the verdict:
 
-- `holds` or `holds-with-changes` on `exploration` → `weave-prd`
+- `holds` or `holds-with-changes` on `exploration` → `weave-architect` once the PRD is written, otherwise `weave-prd`
 - `holds` or `holds-with-changes` on `architecture` → `weave-slices`
 - `needs-reshaping` on `exploration` → `weave-explore`, starting from what broke
 - `needs-reshaping` on `architecture` → `weave-architect`, starting from what broke

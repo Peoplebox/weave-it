@@ -33,9 +33,10 @@ Define how `weave advance` starts the next lifecycle phase, how a run is finishe
 ## Integrations And Side Effects
 
 - `weave-questions` calls `weave advance --transition questions_to_research --json`. On a handoff it starts one fresh, foreground sub-agent with exactly the brief, waits for it, then runs `weave advance --finish-run <run-id> --launch handoff --once --json`. Without sub-agents it gives the person the brief for a new session.
+- `weave-stress-test` hands off the PRD after a passing exploration verdict (`exploration_to_prd`, on by default for `feat`, gated on a current passing verdict for every change type and on `## PRD Readiness` reading `Ready`). For a PRD handoff the brief adds that nobody can answer questions, so the sub-agent returns blocking questions instead of writing `prd.md`.
 - `weave-research` investigates freely (code, tests, docs, web lookups, and quick checks in a temporary folder outside the repo), adds only `research.md` (written with the file tools), edits nothing else in the repo, reads files named in `questions.md` first, and answers follow-up questions in dated `## Follow-Up` sections.
 - `weave-next` reports a running phase with where it runs and never recommends starting it again.
-- Decision: [261108-4z8l-auto-advance-hands-phases-to-the-calling-agent](../../../../decisions/261108-hndf-auto-advance-hands-phases-to-the-calling-agent.md).
+- Decisions: [261108-adko-write-ups-after-a-passing-stress-test-may-auto-advance](../../../../decisions/261108-adko-write-ups-after-a-passing-stress-test-may-auto-advance.md), [261108-4z8l-auto-advance-hands-phases-to-the-calling-agent](../../../../decisions/261108-hndf-auto-advance-hands-phases-to-the-calling-agent.md).
 
 ## Related Specs
 

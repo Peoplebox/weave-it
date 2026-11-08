@@ -642,7 +642,7 @@ auto_advance:
   findings_to_questions: false
 ```
 
-Missing flags read as off. `weave change auto-advance` lists every transition; `weave change auto-advance <transition> on|off` sets one. Transitions that need your decisions are listed as `never` and cannot be turned on: anything into or out of `weave-explore`, `weave-architect`, or `weave-stress-test`, and `prd_to_architecture`.
+Missing flags read as off. `weave change auto-advance` lists every transition; `weave change auto-advance <transition> on|off` sets one. Transitions into a step where you make decisions are listed as `never` and cannot be turned on: into `weave-explore` or `weave-architect`, and `architecture_to_slices` (for now). `exploration_to_prd` can be on, and is on by default for `feat` changes: the PRD only writes up the shape you reviewed, so `weave-stress-test` hands it off after a passing verdict. It fires only when that verdict is current and passing (for every change type) and the shape's `## PRD Readiness` says `Ready`. The stress test clears whatever would block the PRD before it finishes, and if the PRD sub-agent still meets a question it would have to guess, it stops and returns it; the stress test asks you, writes the answer into the shape, and hands the PRD off again.
 
 `weave advance` starts a phase only when every condition holds:
 

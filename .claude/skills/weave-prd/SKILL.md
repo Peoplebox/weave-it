@@ -249,6 +249,10 @@ Before writing, list what the PRD needs that the shape does not answer. Typical 
 - Ask only when a gap would materially change scope, user behaviour, permissions, rollout, or acceptance. Ask one question at a time, with your suggested answer, and stop after about five; anything left becomes an open question.
 - Never re-ask something the shape or the stress test decided.
 
+## When Nobody Can Answer
+
+When you run as a handed-off sub-agent (your brief says nobody can answer questions), you cannot ask. A gap that is safe to assume is still written as an assumption. A gap you would otherwise have asked about stops the run: do not write or change `prd.md` and do not record progress. Reply with only those questions, numbered, each with one line on why it blocks the PRD and your suggested answer. The session that handed you the work asks the user, writes the answers into the shape, and hands the PRD off again.
+
 ## When the Shape Needs to Change
 
 If an answer, or the user, changes a decision recorded in `exploration.md` (the chosen direction, a decision, or the scope), do not quietly write the new decision into the PRD. Say:

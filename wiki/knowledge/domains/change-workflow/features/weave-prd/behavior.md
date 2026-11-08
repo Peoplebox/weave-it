@@ -10,6 +10,7 @@ Write or revise `prd.md` by writing up product decisions already made in the pro
 - Reads `exploration.md`, the stress test session note named in `stress_tests.exploration.session`, `prd.md` and `sessions/*-prd.md` for resuming, `status.yml`, `research.md`, `decisions.md`, and relevant knowledge. Does not read `architecture/`, `tasks.md`, or `implementation.md`.
 - Maps shape sections to PRD sections (Problem to Problem Statement, Scenarios to workflows, stories, edge cases, and acceptance criteria, Decisions to requirements, permissions, lifecycle, and notifications, rejected options to background notes, stress-test exclusions to Non-Goals).
 - Asks only blocking questions (scope, behaviour, permissions, rollout, acceptance), about five at most; everything else becomes an assumption or open question.
+- As a handed-off sub-agent it cannot ask: a gap it would ask about stops the run without writing `prd.md` or recording progress, and it returns the questions with why each blocks and a suggested answer.
 - If an answer would change a shape decision, stops and points to `weave-clarify exploration` and a fresh stress test.
 - Records `weave change progress prd` with the sources used and points to `weave-architect`.
 

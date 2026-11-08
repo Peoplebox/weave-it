@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync } from "node:fs";
-import { mkdir, open, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import {
   agentLaunchers as defaultAgentLaunchers,
@@ -40,7 +40,7 @@ const passingVerdicts: readonly StressTestVerdict[] = ["holds", "holds-with-chan
 // A lock older than this is left over from a crashed runner and is taken over.
 const staleLockMs = 10 * 60 * 1000;
 
-export type AdvanceConditionId = "flag" | "progressed" | "fresh" | "artifact" | "verdict" | "not_started";
+export type AdvanceConditionId = "flag" | "progressed" | "fresh" | "artifact" | "verdict" | "ready" | "not_started";
 
 export interface AdvanceCondition {
   id: AdvanceConditionId;
@@ -339,6 +339,11 @@ export function phaseBrief(input: { skill: string; lane: ChangeStage; changeId: 
       : `Load the ${input.skill} skill by name and follow its instructions exactly.`,
     "Use only what is written in the change folder, the code, and what you look up. There is no earlier conversation to rely on.",
     `What this phase produces goes in wiki/changes/${input.changeId}/; leave the rest of the project as you found it.`,
+    ...(input.lane === "prd"
+      ? [
+          "Nobody can answer questions while you run. If something the PRD needs is not written down and would force a guess, do not write prd.md or record progress: stop and return those questions, each with why it blocks the PRD.",
+        ]
+      : []),
     `Finish the way the skill says, with \`weave change progress ${input.lane}\`. That also completes Weave run ${input.runId}.`,
   ].join("\n");
 }
@@ -516,6 +521,9 @@ async function evaluateTransition(
   });
 
   conditions.push(verdictCondition(change, transition));
+  if (transition.requiresReady) {
+    conditions.push(await readyCondition(change.changePath, transition.from, transition.requiresReady));
+  }
   conditions.push(notStartedCondition(change, transition, upstream?.updated_at, retryFailed));
 
   return {
@@ -546,6 +554,22 @@ function verdictCondition(change: ChangeSummary, transition: LifecycleTransition
     return { id: "verdict", ok: false, detail: `${required.lane} verdict is ${record.verdict}` };
   }
   return { id: "verdict", ok: true, detail: `${required.lane} verdict ${record.verdict} is current` };
+}
+
+// A shape ends with a readiness section, such as `## PRD Readiness`, whose first line is
+// `Ready` or `Not ready — <what is missing>`.
+async function readyCondition(changePath: string, lane: ChangeStage, section: string): Promise<AdvanceCondition> {
+  const file = path.join(changePath, `${lane}.md`);
+  const content = (await pathExists(file)) ? await readFile(file, "utf8") : "";
+  const lines = content.split("\n");
+  const start = lines.findIndex((line) => line.trim().toLowerCase() === `## ${section.toLowerCase()}`);
+  const first = start >= 0 ? lines.slice(start + 1).find((line) => line.trim() && !line.trim().startsWith("<!--"))?.trim() : undefined;
+  if (!first) {
+    return { id: "ready", ok: false, detail: `${lane}.md has no ${section} section` };
+  }
+  return /^ready\b/i.test(first)
+    ? { id: "ready", ok: true, detail: `${section} says Ready` }
+    : { id: "ready", ok: false, detail: `${section} says: ${first}` };
 }
 
 function notStartedCondition(

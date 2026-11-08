@@ -4,10 +4,11 @@
 
 | Decision | Title | Status | Applies to |
 | --- | --- | --- | --- |
+| [261108-adko-write-ups-after-a-passing-stress-test-may-auto-advance](261108-adko-write-ups-after-a-passing-stress-test-may-auto-advance.md) | Write-ups after a passing stress test may auto-advance | accepted | `src/lib/lifecycle-transitions.ts`, `src/lib/advance.ts` |
 | [261108-4z8l-auto-advance-hands-phases-to-the-calling-agent](261108-4z8l-auto-advance-hands-phases-to-the-calling-agent.md) | Auto-advance hands phases to the calling agent | accepted | `src/lib/advance.ts`, `src/commands/advance.ts`, `src/lib/agent-launchers.ts`, `src/lib/agent-permissions.ts` |
 | [261107-ohne-each-change-gets-its-own-worktree-folder](261107-ohne-each-change-gets-its-own-worktree-folder.md) | Each change gets its own folder of worktrees, made with plain git | accepted | `src/lib/worktrees.ts`, `src/lib/changes.ts`, `src/lib/task-prepare.ts`, `src/lib/git.ts` |
 | [261101-qcgh-stress-tests-see-only-what-is-written-down](261101-qcgh-stress-tests-see-only-what-is-written-down.md) | Stress tests see only what is written down | accepted | `templates/skills/weave-stress-test/**`, `templates/agents/weave-challenger.md` |
 | [261101-opav-research-never-reads-intent](261101-opav-research-never-reads-intent.md) | Research never reads the change's intent | accepted | `templates/skills/weave-questions/**`, `templates/skills/weave-research/**` |
 | [261101-jpss-no-skill-requires-plan-mode](261101-jpss-no-skill-requires-plan-mode.md) | No skill requires Plan Mode | accepted | `templates/skills/weave-explore/**`, `templates/skills/weave-architect/**` |
 | [261101-cua6-decision-ids-are-dated-not-sequential](261101-cua6-decision-ids-are-dated-not-sequential.md) | Decision ids are dated, not sequential | accepted | `src/lib/decisions.ts` |
-| [261101-c4tg-human-decision-points-never-auto-advance](261101-c4tg-human-decision-points-never-auto-advance.md) | Human decision points never auto-advance | accepted | `src/lib/lifecycle-transitions.ts`, `src/lib/advance.ts` |
+| [261101-c4tg-human-decision-points-never-auto-advance](261101-c4tg-human-decision-points-never-auto-advance.md) | Human decision points never auto-advance | superseded | `src/lib/lifecycle-transitions.ts`, `src/lib/advance.ts` |

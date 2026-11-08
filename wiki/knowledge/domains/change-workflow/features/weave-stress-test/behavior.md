@@ -11,7 +11,9 @@ Find the weak points in a written shape while they are cheap to fix, using a cri
 - Runs `weave-challenger` (read-only) for up to twelve ranked challenges (`blocking`, `major`, `minor`) with evidence, plus strengths not to reopen. Without sub-agents, produces the challenges itself from the same files.
 - Interviews the user one challenge at a time, blocking first; each answer is settled as decided, deferred, out of scope, or breaks the direction. Stops after blocking and major items or about ten questions, then handles minor items as one batch.
 - Records, in order: a session note `sessions/YYYYMMDD-HHMMSS-<id>-<lane>-stress-test.md`; answers merged into the shape (decisions, scenarios, assumptions, open questions, readiness); lane progress with the lane's existing sources plus `discussion`; then `weave change verdict <lane> <verdict> --session <note>`.
-- Next step: `weave-prd` or `weave-slices` on a passing verdict; back to `weave-explore` or `weave-architect` on `needs-reshaping`.
+- For `exploration`, the interview ends by asking about whatever still blocks the PRD (**PRD Readiness** and blocking **Open Questions**), since the PRD is written by a session nobody can answer.
+- After a passing `exploration` verdict it runs `weave advance --transition exploration_to_prd --json`. On a handoff it runs the brief in one fresh sub-agent. If the sub-agent returns questions instead of a PRD, it finishes the run (`incomplete`), asks the user, writes the answers into `exploration.md`, records exploration progress and the verdict again (`holds-with-changes`), and hands off again, at most twice.
+- Next step: `weave-architect` once the PRD is written, otherwise `weave-prd`; `weave-slices` on a passing architecture verdict; back to `weave-explore` or `weave-architect` on `needs-reshaping`.
 
 ## Behavioral Rules
 

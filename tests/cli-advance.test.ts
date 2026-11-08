@@ -72,7 +72,7 @@ describe("change auto-advance CLI", () => {
     expect(off).toMatchObject({ status: "ok", updated: "questions_to_research" });
     expect(refused).toMatchObject({ status: "error", code: "transition_needs_human" });
     const status = YAML.parse(await readFile(path.join(changePath, "status.yml"), "utf8"));
-    expect(status.auto_advance).toEqual({ questions_to_research: false, findings_to_questions: false });
+    expect(status.auto_advance).toEqual({ questions_to_research: false, findings_to_questions: false, exploration_to_prd: true });
   });
 
   it("records manual runs with start and finish", async () => {
@@ -101,7 +101,7 @@ describe("advance CLI", () => {
 
     expect(result).toMatchObject({ status: "ok", dry_run: true, fired: true });
     const [step] = result.steps as { evaluations: { transition: string; conditions: { id: string }[] }[]; decision: Record<string, unknown> }[];
-    expect(step.evaluations.map((evaluation) => evaluation.transition)).toEqual(["questions_to_research", "findings_to_questions"]);
+    expect(step.evaluations.map((evaluation) => evaluation.transition)).toEqual(["questions_to_research", "findings_to_questions", "exploration_to_prd"]);
     expect(step.evaluations[0].conditions.map((condition) => condition.id)).toEqual([
       "flag",
       "progressed",

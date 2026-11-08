@@ -22,6 +22,8 @@ export interface LifecycleTransition {
   to: ChangeStage;
   skill: string;
   humanDecision?: string;
+  // Readiness section of the upstream shape that must read `Ready`, e.g. "PRD Readiness".
+  requiresReady?: string;
   // Stress test the next skill gates on, for the listed change types.
   requiresVerdict?: { lane: StressTestLane; types: readonly ChangeType[] };
 }
@@ -43,13 +45,16 @@ export const lifecycleTransitions: readonly LifecycleTransition[] = [
     skill: "weave-architect",
     humanDecision: "weave-architect needs you to pick a technical approach",
   },
+  // The PRD writes up a shape you already reviewed in the stress test, so it may follow on
+  // its own, but only after a passing verdict (for every change type) and once the shape
+  // says it is ready for a PRD.
   {
     id: "exploration_to_prd",
     from: "exploration",
     to: "prd",
     skill: "weave-prd",
-    humanDecision: "the product shape must be stress-tested with you in weave-stress-test first",
-    requiresVerdict: { lane: "exploration", types: ["feat"] },
+    requiresVerdict: { lane: "exploration", types: ["feat", "fix", "refactor", "docs", "test", "ci", "chore"] },
+    requiresReady: "PRD Readiness",
   },
   {
     id: "prd_to_architecture",
@@ -81,7 +86,7 @@ export type AutoAdvanceFlags = Partial<Record<LifecycleTransitionId, boolean>>;
 
 // Flags proposed by `weave change new`. Everything else stays off until the user turns it on.
 export const autoAdvanceDefaults: Record<ChangeType, AutoAdvanceFlags> = {
-  feat: { questions_to_research: true, findings_to_questions: false },
+  feat: { questions_to_research: true, findings_to_questions: false, exploration_to_prd: true },
   fix: { questions_to_research: true, findings_to_questions: false },
   refactor: { questions_to_research: true, findings_to_questions: false },
   docs: { questions_to_research: true, findings_to_questions: false },

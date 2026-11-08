@@ -1,14 +1,14 @@
 ---
 id: 261101-c4tg-human-decision-points-never-auto-advance
 title: Human decision points never auto-advance
-status: accepted
+status: superseded
 date: 2026-11-01
 owner: arpit016
 applies_to:
   - src/lib/lifecycle-transitions.ts
   - src/lib/advance.ts
 supersedes: []
-superseded_by: null
+superseded_by: 261108-adko-write-ups-after-a-passing-stress-test-may-auto-advance
 ---
 
 # Human decision points never auto-advance

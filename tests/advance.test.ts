@@ -117,7 +117,9 @@ describe("auto-advance flags", () => {
 
     const status = await readStatus(fixture);
 
-    expect(status.auto_advance).toEqual({ questions_to_research: true, findings_to_questions: false });
+    expect(status.auto_advance).toEqual({ questions_to_research: true, findings_to_questions: false, exploration_to_prd: false });
+    const feature = await readStatus(await setup("feat"));
+    expect(feature.auto_advance).toEqual({ questions_to_research: true, findings_to_questions: false, exploration_to_prd: true });
   });
 
   it("starts with every flag off when created without auto-advance", async () => {
@@ -125,7 +127,7 @@ describe("auto-advance flags", () => {
 
     const status = await readStatus(fixture);
 
-    expect(status.auto_advance).toEqual({ questions_to_research: false, findings_to_questions: false });
+    expect(status.auto_advance).toEqual({ questions_to_research: false, findings_to_questions: false, exploration_to_prd: false });
   });
 
   it("reads changes without auto_advance in status.yml as all off", async () => {
@@ -153,7 +155,7 @@ describe("auto-advance flags", () => {
   it("refuses to turn on transitions that need a human decision", async () => {
     const fixture = await setup();
 
-    for (const transition of ["research_to_exploration", "research_to_architecture", "exploration_to_prd", "prd_to_architecture", "architecture_to_slices"]) {
+    for (const transition of ["research_to_exploration", "research_to_architecture", "prd_to_architecture", "architecture_to_slices"]) {
       await expect(
         autoAdvanceChange({ cwd: fixture.cwd, transition, enabled: true, sessionPath: fixture.session }),
       ).rejects.toMatchObject({ code: "transition_needs_human" });
@@ -209,6 +211,7 @@ describe("weave advance decisions for questions -> research", () => {
     const fixture = await setup();
     await writeQuestionsAndProgress(fixture, 10);
     await autoAdvanceChange({ cwd: fixture.cwd, transition: "questions_to_research", enabled: false, sessionPath: fixture.session });
+    await autoAdvanceChange({ cwd: fixture.cwd, transition: "exploration_to_prd", enabled: false, sessionPath: fixture.session });
 
     const result = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { dryRun: true }));
 
@@ -399,6 +402,47 @@ describe("stress test verdict condition", () => {
     expect(holds).toMatchObject({ ok: true });
     expect(outdated).toMatchObject({ ok: false });
     expect(outdated.detail).toContain("outdated");
+  });
+
+  it("hands off the PRD only after a passing verdict and a Ready shape", async () => {
+    const fixture = await setup();
+    const shape = (readiness: string) =>
+      writeFile(path.join(fixture.changePath, "exploration.md"), `# Shape\n\nExport invoices as CSV.\n\n## PRD Readiness\n\n${readiness}\n`);
+    const conditions = async () => conditionsOf(await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { dryRun: true, transition: "exploration_to_prd" })), "exploration_to_prd");
+
+    await shape("Not ready — who can export is undecided");
+    await progressChange({ cwd: fixture.cwd, stage: "exploration", sources: ["discussion"], now: at(10), sessionPath: fixture.session });
+    await verdictChange({ cwd: fixture.cwd, lane: "exploration", verdict: "holds", now: at(11), sessionPath: fixture.session });
+    const notReady = await conditions();
+
+    await shape("Ready");
+    const ready = await conditions();
+    const handoff = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff", transition: "exploration_to_prd" }));
+
+    expect(notReady).toMatchObject({ flag: true, verdict: true, ready: false });
+    expect(ready).toMatchObject({ flag: true, progressed: true, verdict: true, ready: true, not_started: true });
+    expect(handoff.steps[0].handoff).toMatchObject({ skill: "weave-prd", lane: "prd" });
+    expect(handoff.steps[0].handoff!.brief).toContain("Nobody can answer questions while you run.");
+  });
+
+  it("requires a stress test verdict before auto-advancing to a PRD for every change type", async () => {
+    const fixture = await setup("fix");
+    await autoAdvanceChange({ cwd: fixture.cwd, transition: "exploration_to_prd", enabled: true, sessionPath: fixture.session });
+    await writeFile(path.join(fixture.changePath, "exploration.md"), "# Shape\n\nExport invoices as CSV.\n\n## PRD Readiness\n\nReady\n");
+    await progressChange({ cwd: fixture.cwd, stage: "exploration", sources: ["discussion"], now: at(10), sessionPath: fixture.session });
+
+    const result = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { dryRun: true, transition: "exploration_to_prd" }));
+
+    expect(conditionsOf(result, "exploration_to_prd")).toMatchObject({ flag: true, ready: true, verdict: false });
+  });
+
+  it("does not add the PRD questions rule to other phases' briefs", async () => {
+    const fixture = await setup();
+    await writeQuestionsAndProgress(fixture, 10);
+
+    const result = await advanceChange(advanceOptions(fixture, mockLauncher(fixture), { launch: "handoff" }));
+
+    expect(result.steps[0].handoff!.brief).not.toContain("Nobody can answer questions");
   });
 
   it("never fires a human-decision transition even when every other condition holds", async () => {
