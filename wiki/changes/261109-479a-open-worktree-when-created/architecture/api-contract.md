@@ -11,7 +11,8 @@ description: Request, response, event, and integration contract design.
   - People at a terminal (text output and the TTY menu).
   - Guided skills: `weave-new` and `weave-next` read `--json`; `weave-fix` passes `--no-open`.
   - Scripts and CI (text or JSON, no TTY).
-- **External integrations:** herdr (`herdr-app do`), tmux, iTerm and Terminal (`osascript`), VS Code, Cursor, Claude desktop, T3 Code, and the agent CLIs. None of them are Weave dependencies.
+- **External integrations:** herdr (`herdr-app do tab.new` / `pane.focus`, and herdr-core's `hc ls --json` for bring-forward), tmux, iTerm and Terminal (`osascript`), VS Code and Cursor (their bundled CLIs with `-n <folder>`), Claude desktop (`open claude://code/new?folder=<path>&q=<step>&source=weave`), T3 Code (`open -a`, which only brings it up), and the agent CLIs. None of them are Weave dependencies.
+- **Known integration limits:** T3 Code can't be told to open a folder from outside (its `t3code://` links only handle device pairing), so it always reports `failed` with its hint. Cursor 3.21 run from outside Cursor may open its Agents window instead of the folder (QF1, open).
 
 ## Contract Shape
 
@@ -22,13 +23,15 @@ description: Request, response, event, and integration contract design.
 | `change new <title>` | `--skill <name>`, `--context <text>`, `--open <place>[:<agent>]`, `--no-open` |
 | `change switch <change>` | same as `new` |
 | `change open [<change>]` | `--in <place>` (incl. `none`), `--agent <agent>`, `--skill`, `--context`, `--remember`, `--project`, `--choices`, `--json` |
-| `settings open` | `--in <place>`, `--agent <agent>`, `--clear`, `--project`, `--json`. With no `--in`/`--clear` and `canPrompt`, it shows the menu. With `--in`/`--clear` it saves or removes the default (or the `--project` override) without a TTY and **never opens anything**. With `--json` alone it lists the current settings and choices |
+| `settings open` | `--in <place>`, `--agent <agent>`, `--clear`, `--project`, `--json`. With no `--in`/`--clear` and `canPrompt`, it shows the menu (where, and what to start for terminals; no "just this once" question) and saves the answer directly. With `--in`/`--clear` it saves or removes the default (or the `--project` override) without a TTY and **never opens anything**. With `--json` alone it lists the current settings and choices |
 
 - **Where flags apply:** `--open`, `--no-open`, `--skill`, and `--context` are ignored in in-place mode, which has no folder to open.
 - **One-off choices:** `--open` on `new` or `switch` is never saved.
-- **What `--remember` and `--project` save:** `--remember` saves the personal default, and `--project` saves an override for the current main checkout. A person at the TTY menu or an agent passing on the menu answer uses them; one-off instructions do not. `--in none --remember` records "don't open, don't ask again".
+- **What `--remember` and `--project` save:** `--remember` saves the personal default, and `--project` saves an override for the current main checkout. An agent passes them only when the person answered "make it my default" (or "don't ask again" for "don't open"); "just this once" answers and one-off instructions never use them. `--in none --remember` records "don't open, don't ask again"; `--in none` alone is "don't open, just this once".
+- **The terminal menu's third question:** after where (and what to start, for terminals), the menu asks "Just this once / Make it my default" (for "don't open": "Don't ask again?"). The answer type is `MenuAnswer = { place, agent?, remember? } | { place: "none", dontAsk }`. `openChange` saves only when `remember` is true (or `dontAsk` for "don't open"), or when `--remember`/`--project` was passed (which then also picks the scope). Otherwise `open.saved` is `null`.
 - **`change open` with no `<change>`:** uses the current change.
-- **Folder missing:** if the change's folder does not exist, `change open` returns error code `folder_missing` ("Run `weave change switch <id>` to recreate it"). It never fetches or touches worktrees.
+- **Change reference:** `change open <change>` matches like other change references (full id, token, slug, or title fragment), through `locateChange` in `src/lib/changes.ts`.
+- **Folder missing:** `change open` returns error code `folder_missing` ("Run `weave change switch <id>` to recreate it") only when the change's recorded folder really doesn't exist: a resolved worktree-mode change with no recorded folder or a recorded folder that is gone, or a reference that matches exactly one change recorded on this machine (by full id, token, or slug fragment) whose recorded folder is gone. Any other unmatched reference gets the usual not-found error. It never fetches or touches worktrees.
 - **Running at a TTY:** `change open` without `--in` uses the saved choice. With no saved choice it shows the menu only when `canPrompt`, otherwise it returns `needs_choice`.
 - **When the menu can show (`canPrompt`):** text output (no `--json`), stdin and stdout are both TTYs, and none of `CLAUDECODE`, `CURSOR_AGENT`, `OPENCODE`, `CODEX_SANDBOX`/`CODEX_THREAD_ID`, or `WEAVE_NO_PROMPT` is set. `--json` never shows a menu.
 - **Explicit `--in` from inside the folder:** an explicit `--in` (or `--open`) skips the inside-folder check and bring-forward, so "open it in Cursor instead" works from inside the change folder.
@@ -60,12 +63,12 @@ Added to `ChangeOperationResult` (new) and `SwitchChangeResult` (switch), and re
     "reason": "disabled" | "in_place" | "already_inside" | "no_open_flag" | "dont_ask" | "no_choice"
             | "unknown_saved_value" | "ssh" | "no_display" | "unavailable_now" | "default_missing"
             | "agent_not_found" | "open_failed" | "timeout",
-    "detail": "T3 Code is not running",       // one human line for skipped/failed
+    "detail": "T3 Code couldn't be opened: T3 Code can't be told to open a folder yet, so it was brought up; add the folder as a project there",  // one human line for skipped/failed/unknown_saved_value
     "choices": [                               // needs_choice only (and --choices)
       { "place": "herdr", "kind": "terminal", "label": "herdr tab",
         "agents": [ { "id": "claude", "label": "Claude" }, { "id": "pi", "label": "pi", "own": true },
                     { "id": "shell", "label": "Just a shell" } ] },
-      { "place": "t3code", "kind": "app", "label": "T3 Code", "hint": "must be running" },
+      { "place": "t3code", "kind": "app", "label": "T3 Code", "hint": "add the folder as a project there" },
       { "place": "none", "kind": "none", "label": "Don't open" }
     ]
   }
@@ -73,7 +76,10 @@ Added to `ChangeOperationResult` (new) and `SwitchChangeResult` (switch), and re
 ```
 
 - In in-place mode `open` is `{ "status": "not_attempted", "reason": "in_place" }`, and `folder` is absent, as today.
-- `default_missing` comes with `needs_choice`, or with the TTY menu having been shown. The saved entry has already been cleared.
+- `default_missing` comes with `needs_choice`, or with the TTY menu having been shown. The saved entry has already been cleared. It is used only when the saved place's tool is absent from every absolute install location.
+- `unknown_saved_value` covers a newer settings `version`, a saved place this Weave doesn't know, and a saved terminal agent name that is neither listed nor under `agents:`. The `detail` says how to fix it; the entry is never written or cleared.
+- `saved` is `null` after a "just this once" answer, and `"default"`/`"project"` only when the person chose the default or `--remember`/`--project` was passed.
+- `draft` is `"unsent"` only for the Claude desktop app (the only entry verified by hand, 2026-11-10). If opening with the draft fails, Weave retries without it and reports `"shown"`.
 
 ### Text output (worktree mode)
 
@@ -112,8 +118,8 @@ The replacement lines for each outcome:
 - `weave advance` flags, `.weave/workspace.yml` `advance.*`, and `findTerminalOpener` are unchanged (`261109-bv3c`).
 
 ## Authorization And Validation
-- **Who decides:** only the person decides. Agents pass `--remember` or `--project` only when passing on the person's menu answer, and the skills say so explicitly.
-- **Allowed names:** `--in` and `--agent` must be listed ids, or agent names from the person's own `settings.yml`.
+- **Who decides:** only the person decides. Agents pass `--remember` or `--project` only when the person chose "make it my default" (or "don't ask again"), and the skills say so explicitly. Agents never ask what to start for an app and never pass `--agent` with one (`agent_not_for_app`).
+- **Allowed names:** `--in` and `--agent` must be listed ids, or agent names from the person's own `settings.yml`. Cursor's agent is the id `cursor-agent` and is found only as the `cursor-agent` command, never the shared bare `agent`.
 - **`--context`:** control characters are stripped and it is capped at 500 characters. It is passed only as one argv element or JSON field and never put into a shell line unquoted.
 - **The folder:** passed as an argv element. In the AppleScript-wrapped iTerm and Terminal lines it is quoted with `shellQuote` and then escaped as an AppleScript string.
 - **No permission or setup changes:**
@@ -128,7 +134,8 @@ The replacement lines for each outcome:
 - **Contract tests:**
   - A JSON snapshot for each `open.status`.
   - Text fixtures checking that the no-default, no-TTY output is identical to today's.
-  - `change open` with `folder_missing`.
+  - `change open` with `folder_missing`, only for a genuinely missing recorded folder.
+  - A "just this once" menu answer opens with `saved: null` and leaves `settings.yml` untouched; a "make it my default" answer saves it.
   - Argument validation errors.
   - Hostile `--context` and folder names (quotes, `$(…)`, spaces) produce argv with no shell evaluation.
 - **Fixtures:** a recording registry (in the same pattern as `AdvanceOptions.terminalOpeners`) and a temporary `WEAVE_USER_HOME`. A global vitest setup file sets `WEAVE_NO_OPEN=1` and a temporary `WEAVE_USER_HOME` for every test, so no test can reach a real opener or a developer's real settings. Tests that exercise opening clear `WEAVE_NO_OPEN` and inject the recording registry.

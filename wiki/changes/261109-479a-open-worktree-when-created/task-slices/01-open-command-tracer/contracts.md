@@ -20,7 +20,7 @@ See `architecture/api-contract.md` and `architecture/schema.md` for the full con
 ## State
 
 - Resolution order (this slice): disabled/in-place → explicit `--in` → saved choice (dont_ask / unknown_saved_value / missing → clear) → no choice (menu or `needs_choice`) → open (unavailable_now → skipped; agent not found → failed; open error or timeout → failed).
-- Settings are written only on a menu answer, `--remember`, `--project`, or clearing a definitely-gone entry.
+- Settings are written only on a menu answer of "make it my default" (or "don't ask again"), `--remember`, `--project`, or clearing a definitely-gone entry. "Just this once" saves nothing.
 
 ## Validation and errors
 

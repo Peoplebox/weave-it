@@ -111,9 +111,9 @@ Files:
 
 **Places:**
 - **`claude-desktop`:** darwin only, `missing` when there is no `/Applications/Claude.app`.
-- **`t3code`:** darwin and linux, with the hint "must be running".
+- **`t3code`:** darwin and linux, with the hint "add the folder as a project there" (changed after T2's finding).
 
-Both use the T2 mechanism, spawned detached. A non-zero exit or a timeout gives `failed` with a useful detail line (for T3 Code: "T3 Code must be running"). If T2 found no mechanism, `open` returns `failed` with an explanation.
+Both use the T2 mechanism, spawned detached. A non-zero exit or a timeout gives `failed` with a useful detail line (for T3 Code: it can't be told to open a folder, so it is brought up and reported failed). If T2 found no mechanism, `open` returns `failed` with an explanation.
 
 ### Acceptance Criteria
 

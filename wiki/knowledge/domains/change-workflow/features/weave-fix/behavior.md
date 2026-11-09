@@ -9,7 +9,7 @@
 Single-turn flow from a bug description in chat:
 
 1. Derive slug (confirm if ambiguous).
-2. Check the current branch first (`weave change current --json`). If it already follows the `change/<change-id>` structure (an existing change), continue that change and write/update `findings.md` instead of creating a new one. Otherwise create the change with `weave change new "<title>" --type fix [--slug <slug>]`. In workspace mode the change is created at and owned by the workspace root even when invoked from a registered sub-repo.
+2. Check the current branch first (`weave change current --json`). If it already follows the `change/<change-id>` structure (an existing change), continue that change and write/update `findings.md` instead of creating a new one. Otherwise create the change with `weave change new "<title>" --type fix --no-open [--slug <slug>]`; `--no-open` keeps Weave from opening the change folder before the fix's files are written (an older CLI that rejects it gets the command again without it), and in worktree checkouts the files go under the change folder and the user is told to open it in a new session. In workspace mode the change is created at and owned by the workspace root even when invoked from a registered sub-repo.
 3. Write `findings.md` from `findings-template.md` (Summary required minimum).
 4. Scaffold `task-slices/01-<slug>/` with `tasks.md` + `status.yml` (skip `slice.md` / `contracts.md` for trivial fixes).
 5. `weave slice rollup --all`.
@@ -35,6 +35,7 @@ Fix lane chain: `findings` → optional `architecture` → `slices`.
 - 2026-06-09 (change `260609-rrsq-weave-slice`): introduced; `last_changed_in: 0.1.6`.
 - 2026-06-11 (change `260611-cuvh-slices-execution-default-afk`): corrected step 2 command from the non-existent `weave new --type fix` to `weave change new "<title>" --type fix`; added structural `change/<change-id>` branch check so re-invocation on an existing change branch continues that change instead of creating a duplicate; documented workspace-root authority for change creation.
 - 2026-11-01 (branch `change/questions-research-skills`): checks recorded decisions for the code a bug touches and names them in `findings.md`.
+- 2026-11-10 (change `261109-479a-open-worktree-when-created`): creates the change with `--no-open`, so it is never opened before `findings.md` and the slice exist. See [opening-changes](../opening-changes/behavior.md).
 
 ## Open Questions
 

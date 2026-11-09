@@ -2,7 +2,7 @@
 
 ## Interfaces
 
-- Registry entries `vscode`, `cursor`, `claude-desktop`, `t3code` (`kind: app`, `remoteOk: false`). `choices[]` entries carry `hint` where the place can't be fully checked (`t3code`: "must be running").
+- Registry entries `vscode`, `cursor`, `claude-desktop`, `t3code` (`kind: app`, `remoteOk: false`). `choices[]` entries carry `hint` where the place can't be fully checked (`t3code`: "add the folder as a project there").
 - `open()`: spawn detached with `stdio: "ignore"` and `unref()`. Success means the launcher returned within 10 s.
 
 ### Launch mechanisms (findings, 2026-11-09, slice 04 T2)

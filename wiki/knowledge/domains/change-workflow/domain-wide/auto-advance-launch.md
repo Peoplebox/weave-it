@@ -37,9 +37,10 @@ Define how `weave advance` starts the next lifecycle phase, how a run is finishe
 - `weave-research` investigates freely (code, tests, docs, web lookups, and quick checks in a temporary folder outside the repo), adds only `research.md` (written with the file tools), edits nothing else in the repo, reads files named in `questions.md` first, and answers follow-up questions in dated `## Follow-Up` sections.
 - `weave-next` reports a running phase with where it runs and never recommends starting it again.
 - Decisions: [261108-adko-write-ups-after-a-passing-stress-test-may-auto-advance](../../../../decisions/261108-adko-write-ups-after-a-passing-stress-test-may-auto-advance.md), [261108-4z8l-auto-advance-hands-phases-to-the-calling-agent](../../../../decisions/261108-4z8l-auto-advance-hands-phases-to-the-calling-agent.md).
-- Opening a change folder where the person chose (`weave change new`/`switch`/`open`, `~/.weave/settings.yml`) is a separate feature with its own openers: it never reads `advance.*`, and `weave advance` never reads the opening default ([261109-bv3c](../../../../decisions/261109-bv3c-opening-a-change-is-separate-from-auto-advance-launching.md)).
+- Opening a change folder where the person chose (`weave change new`/`switch`/`open`, `~/.weave/settings.yml`; see [opening-changes](../features/opening-changes/behavior.md)) is a separate feature with its own openers and agent setting: it never reads `advance.*`, and `weave advance` never reads the opening default. Only the quoting helpers (`shellQuote`, `appleScriptString` in `src/lib/terminal-launch.ts`) are shared ([261109-bv3c](../../../../decisions/261109-bv3c-opening-a-change-is-separate-from-auto-advance-launching.md)).
 
 ## Related Specs
 
 - [lifecycle-progress-and-staleness](lifecycle-progress-and-staleness.md)
 - [change-checkouts](change-checkouts.md)
+- [opening-changes](../features/opening-changes/behavior.md)

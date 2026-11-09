@@ -10,7 +10,7 @@ auto_advance:
   findings_to_questions: false
   exploration_to_prd: true
 created_at: 2026-11-09T08:57:56.921Z
-updated_at: 2026-11-09T16:34:34.908Z
+updated_at: 2026-11-09T21:12:34.635Z
 checkout:
   mode: worktree
   repos:
@@ -36,16 +36,16 @@ artifacts:
   prd:
     sources:
       - exploration
-      - sessions
-      - research
-    updated_at: 2026-11-09T14:50:38.919Z
+      - discussion
+      - codebase
+    updated_at: 2026-11-09T21:08:49.716Z
   architecture:
     sources:
       - prd
       - research
       - codebase
       - discussion
-    updated_at: 2026-11-09T16:27:02.677Z
+    updated_at: 2026-11-09T21:12:01.815Z
   slices:
     sources:
       - architecture
@@ -102,3 +102,34 @@ execution:
       prepared_head: 211c08620569d2a1971ab47793a8b15c58896d18
       prepared_at: 2026-11-09T16:34:34.908Z
       verified_at: 2026-11-09T16:34:34.908Z
+stale_history:
+  - lane: slices
+    invalidated_by: prd
+    invalidated_at: 2026-11-09T21:08:49.716Z
+    cleared_at: 2026-11-09T21:12:06.476Z
+    reason: "Read task-slices/*/tasks.md against the revised PRD and architecture:
+      every 2026-11-10 change (just-this-once saving, unknown saved agent left
+      untouched, cursor-agent only, herdr bring-forward, Claude desktop unsent
+      draft and retry, T3 Code failed with hint, folder_missing, custom
+      locations, QF1) is already implemented and recorded in the slice task
+      notes, so the slices need no re-planning."
+knowledge:
+  status: updated
+  updated_at: 2026-11-09T21:12:34.635Z
+  domains:
+    - change-workflow
+    - cli-commands
+  shared: []
+  files:
+    - wiki/knowledge/domains/change-workflow/features/opening-changes/behavior.md
+    - wiki/knowledge/domains/change-workflow/domain-wide/change-checkouts.md
+    - wiki/knowledge/domains/change-workflow/domain-wide/auto-advance-launch.md
+    - wiki/knowledge/domains/change-workflow/domain-wide/change-creation-and-stages.md
+    - wiki/knowledge/domains/change-workflow/features/weave-fix/behavior.md
+    - wiki/knowledge/domains/change-workflow/index.md
+    - wiki/knowledge/domains/cli-commands/features/core-command-reference/behavior.md
+  delta: wiki/changes/261109-479a-open-worktree-when-created/knowledge-delta.md
+  reason: "Documented opening change folders where the person chose: places and
+    agents, needs_choice, just-this-once or default in ~/.weave/settings.yml,
+    the stored next step, weave change open, weave settings open, and the
+    weave-new/next/fix handling."

@@ -404,11 +404,12 @@ These command families no longer expose multi-target behavior. `--target`, `all`
 `weave change` manages durable change folders under the resolved root's `wiki/changes/` directory:
 
 ```bash
-weave change new "<title>" [--type <type>] [--slug <slug>] [--repo <id>] [--base <ref>] [--no-fetch] [--json]
+weave change new "<title>" [--type <type>] [--slug <slug>] [--repo <id>] [--base <ref>] [--no-fetch] [--skill <name>] [--context <text>] [--open <place>[:<agent>] | --no-open] [--json]
 weave change list [--all] [--fetch] [--json]
 weave change current [--json]
 weave change status [change] [--json]
-weave change switch <change> [--json]
+weave change switch <change> [--skill <name>] [--context <text>] [--open <place>[:<agent>] | --no-open] [--json]
+weave change open [change] [--in <place>] [--agent <agent>] [--skill <name>] [--context <text>] [--remember|--project] [--choices] [--json]
 weave change setup [--approve] [--json]
 weave change close [change] [--json]
 weave change progress <lane> [--source <source>...] [--no-invalidate|--invalidate <lanes>] [--json]
@@ -418,6 +419,14 @@ weave change knowledge <status> [--domain <domain>...] [--shared <shared>...] [-
 ```
 
 In worktree checkouts `weave change list` shows each change's state, labels, next step, and the age of its remote facts; `--all` adds past (`done`) changes and `--fetch` waits for a fresh look at the remote. After printing it starts a hidden, detached `weave change refresh --root <main>` at most once a minute (`WEAVE_NO_BACKGROUND_REFRESH=1` turns this off). `close` and `switch` handle folders deleted or moved by hand. See [change-folder-states](../../../change-workflow/features/change-folder-states/behavior.md). In in-place checkouts `list` behaves as before.
+
+In worktree checkouts `new` and `switch` then open the change folder where the person chose, and `open` reopens it (or opens it elsewhere) without fetching or touching worktrees. `--skill`/`--context` set the new session's first step, stored in `status.yml`. Personal settings are changed with:
+
+```bash
+weave settings open [--in <place> [--agent <agent>] | --clear] [--project] [--json]
+```
+
+See [opening-changes](../../../change-workflow/features/opening-changes/behavior.md).
 
 `weave adr` records long-lived engineering decisions. See [recorded-decisions](../../../change-workflow/features/recorded-decisions/behavior.md):
 
@@ -517,7 +526,8 @@ Expected outcome: Commander rejects the unknown option or subcommand. The recove
 - Change command library: `src/lib/changes.ts` (`createChange`, `currentChange`, `statusChange`, `progressChange`, `knowledgeChange`, `listChanges`, `closeChange`)
 - Change states and refresh: `src/lib/change-facts.ts`, `src/lib/change-states.ts`, `src/lib/landed.ts`, `src/lib/change-refresh.ts`
 - Task prepare library: `src/lib/tasks.ts`, `src/lib/task-prepare.ts`
-- CLI command definitions: `src/commands/change.ts`, `src/commands/artifact.ts`, `src/commands/task.ts`, `src/commands/doctor.ts`
+- CLI command definitions: `src/commands/change.ts`, `src/commands/settings.ts`, `src/commands/artifact.ts`, `src/commands/task.ts`, `src/commands/doctor.ts`
+- Opening and personal settings: `src/lib/open-change.ts`, `src/lib/open-places.ts`, `src/lib/user-settings.ts`
 - Tests: `tests/changes.test.ts`, `tests/task-prepare.test.ts`, `tests/tasks.test.ts`, `tests/cli-change-progress.test.ts`, `tests/cli-change-staleness.test.ts`, `tests/cli-skills.test.ts`, `tests/cli-tier1-notices.test.ts`
 - Skill guidance: `templates/skills/weave-new/SKILL.md`, `templates/skills/weave-next/SKILL.md`
 
@@ -656,3 +666,4 @@ Expected outcome: Weave recognizes that `billing` is registered but missing loca
 - 2026-06-08 (change `260608-78sp-fix-weave-add`): Workspace `weave add` now treats registered-but-missing repo paths as local materialization targets for both git URLs and local paths instead of duplicate adds.
 - 2026-11-09 (change `261107-4oq6-flag-stale-change-folders-in-weave`): `weave change list` gained `--all`, `--fetch`, per-change states, and a hidden background `weave change refresh`.
 - 2026-07-21 (change `260721-6d48-fix-init`): Cloned Weave workspaces now work without `weave init`. `weave init` is a safe no-op when `.weave/workspace.yml` already exists up the tree (no re-scaffold, no repo move, no session write). `weave add` in repo mode lazily creates a session containing only the target folder when no session exists. Repo-mode `weave workspace` with no session derives the workspace-root folder without writing. The `no_session` JSON status is renamed to `not_initialized` and is emitted only in the genuine uninitialized case.
+- 2026-11-10 (change `261109-479a-open-worktree-when-created`): `weave change new` and `switch` gained `--skill`, `--context`, `--open`, and `--no-open`; added `weave change open` and `weave settings open`.

@@ -32,12 +32,14 @@ locations:                      # extra absolute install paths for listed tools 
 ```
 
 - **Project keys:** absolute, realpath-normalised main checkout paths, from `workspaceLayout(root).mainRoot` (`src/lib/worktrees.ts:461-464`). The same key results whether the command runs in the main checkout or in any change folder.
-- **`place: none` without `ask: false`:** never written. A plain "don't open" leaves the entry unset, so the menu shows again next time.
+- **`place: none` without `ask: false`:** never written. "Don't open, just this once" leaves the entry unset, so the menu shows again next time.
+- **"Just this once" answers:** never written, for any place. Only "make it my default", "don't ask again", `--remember`/`--project`, and `weave settings open` write `open.default` or `open.projects`.
 
 ## Validation
 - **Unknown `version` (newer):** treated as `unknown_saved_value`. Opening reports `not_attempted` ("update Weave"), no menu is shown, and the file is never written.
-- **A place or agent this Weave version doesn't recognise** in `default` or `projects`: `unknown_saved_value`. Opening reports `not_attempted`, no menu is shown, and **that entry is never written or cleared**. This protects a default saved by a newer Weave on the same machine.
+- **A place or agent this Weave version doesn't recognise** in `default` or `projects`: `unknown_saved_value`. This includes a terminal agent name that is neither listed nor a key in `agents:` (for example an own agent that was removed). Opening reports `not_attempted`, no menu is shown, and **that entry is never written or cleared**. This protects a default saved by a newer Weave on the same machine, which Weave can't tell apart from a removed own agent.
 - **Unknown ids in `locations`:** ignored with a warning, never removed. Personal settings cannot add places.
+- **Known ids in `locations`:** merged into whichever runtime opening uses (the default runtime or an injected one), so they apply to any runtime.
 - **`agent` with an app place:** ignored.
 - **Unknown top-level keys and unknown fields:** preserved on write.
 - **Unreadable YAML:** opening reports `failed` (`settings.yml could not be read`). `new` and `switch` still succeed, and the file is never overwritten while it is unreadable.
@@ -51,16 +53,15 @@ locations:                      # extra absolute install paths for listed tools 
 Bring-forward (tmux) runs only after step 2 or 3 resolves to a non-`none` place, or after the menu or chat answer. It never runs for `needs_choice`, `dont_ask`, or `--no-open`.
 
 ## Clearing a saved default
-- **Cleared only when it is definitely gone:**
-  - the place is recognised and its `check()` finds the tool at **none of its absolute install locations** (the registry's known paths plus `locations.<id>`), or
-  - the saved `agent` is a recognised format, but is neither a listed agent, nor a key in `agents:`, nor `shell`. For example, an own agent that was removed.
+- **Cleared only when it is definitely gone:** the place is recognised and its `check()` finds the tool at **none of its absolute install locations** (the registry's known paths plus `locations.<id>`).
+- **An unknown agent name is not cleared** (revised 2026-11-10). A saved `agent` that is neither a listed agent, nor a key in `agents:`, nor `shell` is reported as `unknown_saved_value` and left alone. The architecture stress test's C1 had said it clears; C8 (unrecognised values are never touched) wins, because a removed own agent and an agent saved by a newer Weave look the same.
 - **PATH is never proof of absence.** PATH is used only to find tools. A tool that has no absolute path to check (such as tmux) and isn't found reports `unavailable_now`.
 - **A listed agent that can't be found**, while its place is found, gives a `failed` run, and the default is kept.
 - **Only the resolved entry is cleared** (the project override or the default). The other is left alone.
 
 ## How the file changes
 - **When it is written:**
-  - a menu answer, or `--remember` / `--project`
+  - a menu or chat answer where the person chose "make it my default" (`MenuAnswer.remember`) or "don't ask again", or `--remember` / `--project`. A "just this once" answer writes nothing.
   - `weave settings open --in … | --clear [--project]` (no TTY needed)
   - clearing a definitely-gone entry
 - **How it is written:** read, modify, then `writeFileAtomic` (`src/lib/files.ts`). If two Weave processes write at once, the last one wins, which is acceptable for a personal file. No lock.
@@ -89,7 +90,8 @@ next_step:
 - Each validation rule.
 - Unrecognised values never written or cleared.
 - Precedence across flags, project override, and default.
-- Clearing only on absolute-path absence or an unknown agent name, never on PATH misses, a missing agent, a timeout, or `unavailable_now`.
+- Clearing only on absolute-path absence, never on PATH misses, a missing agent, an unknown agent name, a timeout, or `unavailable_now`.
+- A "just this once" answer leaves the file untouched; "make it my default" writes it.
 - `--clear [--project]`.
 - A key resolved from a change folder equals the key resolved from the main checkout.
 - The stored `next_step` is used, then ignored after a stage change.

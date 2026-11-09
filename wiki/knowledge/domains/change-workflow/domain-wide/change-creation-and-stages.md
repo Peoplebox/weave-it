@@ -60,6 +60,7 @@ Other non-feature changes:
 ## Integrations And Side Effects
 
 - `weave-new` recommends `weave-questions` then `weave-research` (followed by `weave-explore`) after creating a feature change that touches existing behaviour, `weave-explore` directly for greenfield work, and the fitting next skill (`weave-fix` / `weave-architect` / `weave-slices` / `weave-prd`) after creating a non-feature change.
+- `weave-new` chooses that first skill before creating the change and passes it with `weave change new "<title>" --skill <skill> --context "<gist>"`. Weave stores the composed step (`use the <skill> skill for change <id>: <gist>`) as `next_step: { text, stage }` in `status.yml`; `switch` and `open` reuse it until the change's stage moves on, then fall back to `weave-next`. In worktree checkouts the change folder may then open where the person chose; see [opening-changes](../features/opening-changes/behavior.md).
 - `weave change current` / `weave change status` surface the stored `stage`, including `started`.
 - Existing change folders created before this behavior (feature-style scaffolds with `exploration.md` at `stage: exploration`) remain readable and unchanged.
 
@@ -78,6 +79,7 @@ Other non-feature changes:
 - 2026-06-04 (change `260604-68e6-fix-change-progress-qf-bug`): implemented non-feature change scaffolding. Non-feature `weave change new` now starts at `stage: started` with no `exploration.md` and no current artifact context. Added the `started` stored stage (`storedStages` / `StoredChangeStage` / `isStoredChangeStage`) distinct from the four artifact lanes. This realizes the behavior decided earlier in change `260602-of9s-add-ability-to-bug-fix` (PRD) that had not previously been implemented.
 - 2026-06-09 (change `260609-rrsq-weave-slice`): added `findings` and `slices` artifact lanes; `issues` normalizes to `slices` on read; fix-type flow via `weave-fix`; feature flow ends at `slices` instead of `issues`.
 - 2026-06-11 (change `260610-l397-removing-local-cache`): `weave change new` now requires git, active change resolution is branch-derived, and local session `current_change` / `current_artifact` fields are ignored for routing.
+- 2026-11-10 (change `261109-479a-open-worktree-when-created`): `weave-new` picks the first skill before creating the change; `--skill`/`--context` and the stored `next_step` in `status.yml`.
 - 2026-10-20 (branch `change/questions-research-skills`): added the `questions` and `research` evidence lanes, which never move `stage`; the `exploration.md` scaffold now uses the product shape sections.
 
 ## Open Questions

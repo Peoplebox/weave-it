@@ -15,7 +15,7 @@
 ## State
 
 - `missing` only from absolute paths. iTerm is `missing` when `/Applications/iTerm.app` and `locations.iterm` are both absent. Terminal is never `missing`.
-- A listed agent that isn't found gives `failed` (`agent_not_found`), and the default is kept. An own-agent name removed from settings is unknown, so that entry is cleared.
+- A listed agent that isn't found gives `failed` (`agent_not_found`), and the default is kept. An agent name this Weave doesn't recognise (for example an own agent removed from settings) gives `not_attempted` (`unknown_saved_value`) and the entry is left untouched.
 - SSH gives `skipped` (`ssh`) before any `check()` of a `remoteOk: false` place.
 
 ## Validation and errors

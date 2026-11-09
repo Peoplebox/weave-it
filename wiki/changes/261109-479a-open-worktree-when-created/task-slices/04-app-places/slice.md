@@ -6,7 +6,7 @@ The app side of the fixed list works:
 - VS Code (found only through its own install path, never `code` on PATH).
 - Cursor (opened with `-n`).
 - Claude desktop on macOS.
-- T3 Code, shown with a "must be running" hint.
+- T3 Code, shown with an "add the folder as a project there" hint (it can't be told to open a folder; see contracts.md).
 
 Apps have no second step. App processes are detached so Weave never waits on them. Apps are skipped over SSH on every platform, and on Linux they are `unavailable_now` with no display.
 
@@ -14,7 +14,7 @@ Apps have no second step. App processes are detached so Weave never waits on the
 
 1. The person picks "Cursor" in the menu. Cursor opens a new window on the change folder, and the original session shows the next step to paste.
 2. On a machine where Cursor has taken over `code`, choosing VS Code still opens VS Code.
-3. With T3 Code installed but not running, a create reports `Didn't open: T3 Code must be running.` plus the folder and step, and the default is kept.
+3. With a T3 Code default, a create brings T3 Code up and reports `Didn't open: …add the folder as a project there.` plus the folder and step, and the default is kept.
 4. On a headless Linux box, a Cursor default reports `skipped` (`no_display`).
 
 ## In scope

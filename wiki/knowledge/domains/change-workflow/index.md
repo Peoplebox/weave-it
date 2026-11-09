@@ -9,6 +9,7 @@ Sliced changes store work under `task-slices/<NN>-<slug>/`; legacy flat changes 
 ## Features
 
 - [change-folder-states](features/change-folder-states/behavior.md): per-change states in `weave change list` (landed, folder missing, closed, done…), the shared landed check, remembered starting branches, the background remote refresh into Weave-only refs, missing-folder `close`/`switch`, and the `weave status` attention line.
+- [opening-changes](features/opening-changes/behavior.md): worktree checkouts open the change folder where the person chose (terminal with an agent, or an app), asked once by menu or in chat (`needs_choice`), saved just this once or as a personal default in `~/.weave/settings.yml`; `weave change open`, `weave settings open`, and the stored next step.
 - [recorded-decisions](features/recorded-decisions/behavior.md): long-lived engineering decisions (ADRs) in `wiki/decisions/`, the `weave adr` commands, and how each skill checks, drafts, and accepts them.
 - [weave-questions-and-research](features/weave-questions-and-research/behavior.md): current-state research questions and objective, cited research with read-only sub-agents; the `questions` and `research` evidence lanes.
 - [weave-explore](features/weave-explore/behavior.md): product brainstorm (options, discussion, then targeted questions) that writes the product shape to `exploration.md`.
@@ -27,7 +28,7 @@ Sliced changes store work under `task-slices/<NN>-<slug>/`; legacy flat changes 
 ## Domain-Wide Behavior
 
 - [auto-advance-launch](domain-wide/auto-advance-launch.md): how `weave advance` hands a phase to the calling agent as a fresh sub-agent (or starts a session itself when configured), how runs finish, the phase permission rules, and `weave change run log`.
-- [change-checkouts](domain-wide/change-checkouts.md): worktree checkouts (a folder of worktrees per change, base branches, copy, approved setup, slots, close) and the in-place branch-switching safeguards.
+- [change-checkouts](domain-wide/change-checkouts.md): worktree checkouts (a folder of worktrees per change, base branches, copy, approved setup, opening, slots, close) and the in-place branch-switching safeguards.
 - [change-creation-and-stages](domain-wide/change-creation-and-stages.md): `weave change new` scaffolding (feature vs non-feature), the `stage` vocabulary, and the non-lane `started` stage used by non-feature changes.
 - [architecture-artifacts](domain-wide/architecture-artifacts.md): legacy `architecture.md` and folder-mode `architecture/index.md` plus facet files, including shape resolution, conflict handling, and lane-atomic lifecycle behavior.
 - [lifecycle-progress-and-staleness](domain-wide/lifecycle-progress-and-staleness.md): `weave change progress` semantics, the default pessimistic stale propagation, CLI levers (`--no-invalidate`, `--invalidate`), explicit `weave change clear-stale`, the `stale_history` audit trail, and the agent-side verification protocol embedded in every progress-calling skill.

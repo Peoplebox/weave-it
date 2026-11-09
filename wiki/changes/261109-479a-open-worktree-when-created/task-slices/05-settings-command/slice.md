@@ -3,7 +3,7 @@
 ## Outcome
 
 A person or agent can view, change, or clear where changes open, without opening anything:
-- **At a terminal:** `weave settings open` shows the same two-step menu.
+- **At a terminal:** `weave settings open` shows the same menu (and always saves the answer).
 - **From chat:** an agent runs `weave settings open --in cursor --project --json` or `--clear`, with no TTY needed.
 
 ## User flow

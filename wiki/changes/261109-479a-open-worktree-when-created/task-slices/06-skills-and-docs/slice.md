@@ -15,7 +15,7 @@ The README, command help, and knowledge wiki describe the menu, the default, `we
 
 1. In Claude, the person says "start a change for CSV export of reports; I want to brainstorm first".
 2. `weave-new` picks `weave-explore` and runs `weave change new "CSV export of reports" --skill weave-explore --context "brainstorm CSV export for reports" --json`.
-3. On `needs_choice`, it asks in chat with the choices. The person answers "herdr, Claude". The agent runs `weave change open <id> --in herdr --agent claude --remember --json`, reports where it opened with the fallback, and stops editing the change.
+3. On `needs_choice`, it asks in chat with the choices. The person answers "herdr, Claude, make it my default". The agent runs `weave change open <id> --in herdr --agent claude --remember --json` (without `--remember` for just this once), reports where it opened with the fallback, and stops editing the change.
 4. Later, "open it in Cursor instead" leads `weave-next` to run `weave change open <id> --in cursor --json` without `--remember`.
 5. A teammate on an older global `weave` gets an unknown-option error. The skill re-runs without the new flags and gives today's guidance.
 
@@ -35,7 +35,7 @@ The README, command help, and knowledge wiki describe the menu, the default, `we
 ## Acceptance criteria
 
 - [ ] No bundled skill still tells every person to open the folder themselves, except as the documented fallback.
-- [ ] `weave-new` passes `--skill`/`--context` and handles `needs_choice` by asking in chat and running `change open --remember`.
+- [ ] `weave-new` passes `--skill`/`--context` and handles `needs_choice` by asking in chat (no agent question for apps; just this once or default) and running `change open`, with `--remember` only for a default.
 - [ ] `weave-fix` passes `--no-open`, and its behaviour is otherwise unchanged.
 - [ ] Skills fall back when the new flags are rejected as unknown.
 - [ ] The skill drift and content checks pass, and the installed copies match the templates.

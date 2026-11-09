@@ -80,7 +80,7 @@ Files:
 - **Agent entries:**
   - `codex`: `codex -C <folder>`
   - `opencode`: `opencode <folder>`
-  - `cursor-agent`: command `agent`, `agent --workspace <folder>`
+  - `cursor-agent`: command `cursor-agent` (never the bare `agent`, which other tools share), `cursor-agent --workspace <folder>`
 - **Install paths:** look up the usual absolute install paths for each agent and terminal tool on macOS and Linux (Homebrew `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, npm global prefixes, the `~/.opencode/bin` style used by each tool's installer) from each tool's install docs. Record the sources in a code comment.
 - **Draft:** `draft: none` for every entry.
 
@@ -110,7 +110,7 @@ Files:
 
 - **Own agents:** `agents.<name>` become step-two choices with `own: true`. They are run as `/bin/sh -c '<command>'` plus the login-shell tail, never checked, and never given a draft.
 - **Custom locations:** `locations.<id>` adds an absolute path for listed ids. Unknown ids produce a warning and are left untouched.
-- **Removed own agents:** a saved default whose own agent was removed is an unknown agent name, so that entry is cleared.
+- **Removed own agents:** a saved default whose own agent was removed gives `unknown_saved_value` and is left untouched (see slice 01 T3 note).
 
 ### Acceptance Criteria
 
