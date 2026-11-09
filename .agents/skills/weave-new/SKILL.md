@@ -25,11 +25,17 @@ weave change current
 
 2. Identify the current workspace or repo context from `weave workspace --json`. In workspace mode, the workspace root owns the change store even if implementation later touches registered sub-repos.
 
-3. Run:
+3. Choose the change's first step before creating it, because a change with a saved default opens straight away with that step filled in. Use the rules under **Behavior Rules**: for a `feat` change, `weave-questions` when it touches existing behaviour and the code should be understood first, `weave-explore` when the user is starting from an idea or a rough description or wants to brainstorm; for other types, the fitting skill. If the conversation doesn't make the intent clear, ask one short question, for example: "Should we first understand the existing code, or brainstorm from the idea?"
+
+   Then run:
 
 ```bash
-weave change new "<title>"
+weave change new "<title>" --skill <first-skill> --context "<one-line gist of what the user wants>" --json
 ```
+
+   `--context` is one plain line in the user's words (no secrets); Weave adds it to the step the new session starts with.
+
+   If the command fails because `--skill` or `--context` is an unknown option, the installed `weave` CLI is older than this skill: run `weave change new "<title>" --json` without them and follow the "Older CLI" note in step 4.
 
 Use `--type <type>` when the work is not a new capability. Supported values are `feat`, `fix`, `refactor`, `docs`, `test`, `ci`, and `chore`.
 
@@ -38,8 +44,35 @@ Use `--slug <slug>` only when the user requested a specific folder or branch slu
 Use `--repo <id>` (repeatable) only when the user says the change touches just some registered repos. Use `--base <ref>` only when the user asks to start from a specific branch. When only some repos should start there, pass it per repo, for example `--base api=feature/x` (`root` is the workspace root); other repos then start from their default branch.
 
 4. Report the change id and branch. What comes next depends on the result's `checkout`:
-   - `worktree`: the change has its own folder (`folder` in the result), with a worktree per repo on the change branch. The user's current checkout did not move. Tell the user to open that folder in a new session and run the next skill there. Do not keep working on the change from this session, because this session's files are not the change's files.
-   - `in-place`: the current checkout switched to the change branch, and the new change is current here.
+   - `in-place`: the current checkout switched to the change branch, and the new change is current here. Recommend the first step.
+   - `worktree`: the change has its own folder (`folder` in the result), with a worktree per repo on the change branch. The user's current checkout did not move. Weave may have opened the folder for them; act on `open.status`:
+
+| `open.status` | What to do |
+| --- | --- |
+| `opened` | Say where it opened (`open.where`) and that work continues there. Give the folder and `next_step` as a fallback in case the new session didn't start; when `open.draft` is `shown`, say the step must be pasted there. |
+| `brought_forward` | Say the existing window was brought forward and give `next_step`. |
+| `needs_choice` | Nothing is saved yet. Ask where changes should open; see **Asking where changes open** below. |
+| `skipped`, `failed` | Say what went wrong in one line (`open.detail`) and give the folder and `next_step` to run there. |
+| `not_attempted` | Give the folder and `next_step`, as before opening existed. |
+
+   **Asking where changes open** (only on `needs_choice`):
+
+   1. If `open.detail` is set (for example the old default was uninstalled), say it first.
+   2. Ask where changes should open, listing each entry of `open.choices` by its `label` (add its `hint` in brackets when present), including "Don't open".
+   3. Only if the chosen entry has `kind: "terminal"`, ask what to start in it, listing that entry's `agents` by `label`. An entry with `kind: "app"` (VS Code, Cursor, the Claude desktop app, T3 Code) brings its own agent or editor: never ask this question for it, and never pass `--agent` with it.
+   4. Ask "Just this once, or make it your default?" (for "Don't open": "Just this once, or don't ask again?"). You may fold this into the earlier question when the user already said it, for example "always open in Cursor".
+   5. Open with the answer. Add `--remember` only when they chose to make it their default:
+      - a terminal: `weave change open <id> --in <place> --agent <agent id> [--remember] --json`
+      - an app: `weave change open <id> --in <place> [--remember] --json`
+      - "don't open, don't ask again": `weave change open <id> --in none --remember --json`
+      - "don't open" just this once: run nothing; they will be asked next time.
+   6. Report the result's `open` with the table above. When it was just this once, mention they will be asked again next time, and that `weave settings open` sets a default.
+
+   In every `worktree` case, do not keep working on the change from this session, because this session's files are not the change's files. This session can still reopen it on request: "open it again" is `weave change open <id> --json`, and "open it in Cursor instead" is `weave change open <id> --in cursor --json`.
+
+   One-off instructions never change the default: for "don't open this one" pass `--no-open` to `weave change new`; for "open this one in X" pass `--open <place>[:<agent>]`. Use `--remember` only when the user chose to make their answer the default, never for one-off instructions.
+
+   Older CLI: if `open` is missing from the result, tell the user to open the folder in a new session and run `next_step` (or the recommended first skill) there.
 
 If the command fails with `worktree_blocked` or `stacked_change`, nothing was created. Show the user the reasons it gives and stop.
 

@@ -48,23 +48,53 @@ import {
   startChangeRun,
   closeChange,
   type CloseChangeResult,
+  locateChange,
   setupChange,
 } from "../lib/changes.js";
 import { runLogPath } from "../lib/advance.js";
 import { printRunLog } from "../lib/run-log.js";
 import { joinOrRunRefresh, planBackgroundRefresh, readRemoteFacts, runRefresh, spawnBackgroundRefresh } from "../lib/change-refresh.js";
 import { withNotices } from "../lib/with-notices.js";
+import {
+  currentChoices,
+  formatOpenLines,
+  openChange,
+  parseOpenFlag,
+  placeOpenLines,
+  validateExplicitChoice,
+  type ExplicitChoice,
+  type OpenContext,
+  type OpenResult,
+} from "../lib/open-change.js";
 import { findWorkspaceMode } from "../lib/workspace-mode.js";
-import { workspaceCheckoutMode } from "../lib/worktrees.js";
+import { mainCheckoutPath, workspaceCheckoutMode } from "../lib/worktrees.js";
 import type { SetupCommand, SetupResult } from "../lib/worktrees.js";
 
-interface ChangeNewOptions {
+// `--open <place[:agent]>` and `--no-open` share one commander attribute: a string, or false.
+interface OpenFlags {
+  open?: string | false;
+  skill?: string;
+  context?: string;
+}
+
+interface ChangeNewOptions extends OpenFlags {
   slug?: string;
   type?: ChangeType;
   autoAdvance?: boolean;
   repo?: string[];
   base?: string[];
   fetch?: boolean;
+  json?: boolean;
+}
+
+interface ChangeOpenOptions {
+  in?: string;
+  agent?: string;
+  skill?: string;
+  context?: string;
+  remember?: boolean;
+  project?: boolean;
+  choices?: boolean;
   json?: boolean;
 }
 
@@ -137,10 +167,15 @@ export function changeCommand(): Command {
       [],
     )
     .option("--no-fetch", "worktree checkouts: do not fetch the base branch first")
+    .option("--skill <name>", "the skill the change should start with, e.g. weave-explore; used as the new session's first step")
+    .option("--context <text>", "a one-line gist added to that first step")
+    .option("--open <place>", "open this change in <place>[:<agent>] this time only, e.g. tmux:claude or cursor")
+    .option("--no-open", "don't open this change, whatever your default says")
     .option("--json", "print machine-readable JSON")
     .action(async (title: string, options: ChangeNewOptions) => {
       const json = options.json ?? false;
       await runAction(json, async () => {
+        const explicit = await openFlagsFromOptions(options);
         await withNotices({ commandName: "change-new", json }, async () => {
           const result = await createChange({
             cwd: process.cwd(),
@@ -152,7 +187,18 @@ export function changeCommand(): Command {
             ...parseBases(options.base ?? []),
             fetch: options.fetch,
           });
-          return { json: result, text: result.message };
+          const opened = await openAfter({
+            changeId: result.id,
+            folder: result.folder,
+            checkout: result.checkout,
+            changePath: result.targets[0]?.changePath,
+            stage: result.type === "feat" ? "exploration" : "started",
+            message: result.message,
+            explicit,
+            options,
+            json,
+          });
+          return { json: { ...result, message: opened.message, next_step: opened.next_step, open: opened.open }, text: opened.text };
         });
       });
     });
@@ -420,16 +466,81 @@ export function changeCommand(): Command {
 
   command
     .command("switch")
-    .description("Switch to an existing change.")
+    .description("Switch to an existing change. With change folders, also opens it where you chose.")
     .argument("<change>", "change id, token, slug, or title substring")
+    .option("--skill <name>", "the skill the new session should start with; replaces the stored first step")
+    .option("--context <text>", "a one-line gist added to that step")
+    .option("--open <place>", "open this change in <place>[:<agent>] this time only, e.g. tmux:claude or cursor")
+    .option("--no-open", "don't open this change, whatever your default says")
     .option("--json", "print machine-readable JSON")
-    .action(async (change: string, options: ChangeTargetOptions) => {
-      await runAction(options.json ?? false, async () => {
+    .action(async (change: string, options: ChangeTargetOptions & OpenFlags) => {
+      const json = options.json ?? false;
+      await runAction(json, async () => {
+        const explicit = await openFlagsFromOptions(options);
         const result = await switchChange({
           cwd: process.cwd(),
           change,
         });
-        writeResult(result, options.json ?? false);
+        const opened = await openAfter({
+          changeId: result.change.id,
+          folder: result.folder,
+          checkout: result.folder ? "worktree" : "in-place",
+          changePath: result.change.changePath,
+          stage: result.change.stage,
+          message: result.message,
+          explicit,
+          options,
+          json,
+        });
+        const merged = { ...result, message: opened.message, next_step: opened.next_step, open: opened.open };
+        process.stdout.write(json ? `${JSON.stringify(merged, null, 2)}\n` : `${opened.text}\n`);
+      });
+    });
+
+  command
+    .command("open")
+    .description("Worktree checkouts: open a change's folder in your chosen terminal or app. Never fetches or touches worktrees.")
+    .argument("[change]", "change id, token, slug, or title substring; defaults to the active change")
+    .option("--in <place>", "where to open it: herdr, tmux, iterm, terminal, vscode, cursor, claude-desktop, t3code, or none")
+    .option("--agent <agent>", "terminals only: claude, codex, opencode, cursor-agent, one of your own agents, or shell")
+    .option("--skill <name>", "the skill the new session should start with, e.g. weave-explore")
+    .option("--context <text>", "a one-line gist added to the next step")
+    .option("--remember", "save this choice as your default for every project")
+    .option("--project", "save this choice for this project only")
+    .option("--choices", "list the places and agents you can choose from, without opening anything")
+    .option("--json", "print machine-readable JSON")
+    .action(async (change: string | undefined, options: ChangeOpenOptions) => {
+      const json = options.json ?? false;
+      await runAction(json, async () => {
+        if (options.agent && !options.in) {
+          throw new ChangeCommandError("agent_needs_place", "--agent needs --in <terminal>.");
+        }
+        const explicit: ExplicitChoice | undefined = options.in ? { place: options.in, ...(options.agent ? { agent: options.agent } : {}) } : undefined;
+        await validateExplicitChoice(explicit);
+        const located = await locateChange({ cwd: process.cwd(), change });
+        if (options.choices) {
+          const choices = await currentChoices();
+          writeOpenResult({ status: "ok", id: located.id, choices }, json, formatChoices(choices));
+          return;
+        }
+        if (located.checkout === "worktree" && (!located.folder || !located.folderExists)) {
+          throw new ChangeCommandError(
+            "folder_missing",
+            `The folder for ${located.id} isn't on this machine. Run \`weave change switch ${located.id}\` to recreate it.`,
+          );
+        }
+        const folder = located.folder ?? located.changePath;
+        const result = await openChange({
+          ...openFlagsContext({ explicit, skill: options.skill, context: options.context, remember: options.project ? "project" : options.remember ? "default" : undefined, json }),
+          changeId: located.id,
+          folder,
+          mainRoot: located.mainRoot,
+          cwd: process.cwd(),
+          inPlace: located.checkout !== "worktree",
+          changePath: located.changePath,
+          stage: located.stage,
+        });
+        writeOpenResult({ status: "ok", id: located.id, folder, ...result }, json, formatOpenLines(result, folder).join("\n"));
       });
     });
 
@@ -486,6 +597,88 @@ function parseBases(values: string[]): { base?: string; repoBases?: Record<strin
     }
   }
   return { ...(base ? { base } : {}), ...(Object.keys(repoBases).length > 0 ? { repoBases } : {}) };
+}
+
+// Validated before anything is created or switched to.
+async function openFlagsFromOptions(options: OpenFlags): Promise<ExplicitChoice | undefined> {
+  const explicit = typeof options.open === "string" ? parseOpenFlag(options.open) : undefined;
+  await validateExplicitChoice(explicit);
+  return explicit;
+}
+
+// Opens a change that was just created or switched to, and puts the outcome where the
+// summary's "Open <folder> in a new session" line was. Without a default and with nobody to
+// ask, the output is exactly what it was before opening existed.
+async function openAfter(input: {
+  changeId: string;
+  folder?: string;
+  checkout: string;
+  changePath?: string;
+  stage: string;
+  message: string;
+  explicit?: ExplicitChoice;
+  options: OpenFlags;
+  json: boolean;
+}): Promise<{ message: string; text: string; next_step: string; open: OpenResult["open"] }> {
+  const folder = input.folder;
+  const openLine = folder ? `Open ${folder} in a new session to work on this change.` : undefined;
+  let summaryPrinted = false;
+  const result = await openChange({
+    ...openFlagsContext({ explicit: input.explicit, noOpen: input.options.open === false, skill: input.options.skill, context: input.options.context, json: input.json }),
+    changeId: input.changeId,
+    folder: folder ?? input.changePath ?? process.cwd(),
+    mainRoot: await mainCheckoutPath(process.cwd()).catch(() => undefined),
+    cwd: process.cwd(),
+    inPlace: input.checkout !== "worktree" || !folder,
+    ...(input.changePath ? { changePath: input.changePath } : {}),
+    stage: input.stage,
+    beforePrompt: () => {
+      // The person sees what was created before choosing where to open it.
+      const lines = input.message.split("\n").filter((line) => line !== openLine);
+      process.stdout.write(`${lines.join("\n").trimEnd()}\n\n`);
+      summaryPrinted = true;
+    },
+  });
+  const outcome = folder ? formatOpenLines(result, folder) : [];
+  const message = folder ? placeOpenLines(input.message, folder, result) : input.message;
+  return {
+    message,
+    text: summaryPrinted ? outcome.join("\n") : message,
+    next_step: result.next_step,
+    open: result.open,
+  };
+}
+
+function openFlagsContext(input: {
+  explicit?: ExplicitChoice;
+  noOpen?: boolean;
+  skill?: string;
+  context?: string;
+  remember?: "default" | "project";
+  json: boolean;
+}): Pick<OpenContext, "explicit" | "noOpen" | "skill" | "context" | "remember" | "json" | "interactive"> {
+  return {
+    ...(input.explicit ? { explicit: input.explicit } : {}),
+    ...(input.noOpen ? { noOpen: true } : {}),
+    ...(input.skill ? { skill: input.skill } : {}),
+    ...(input.context ? { context: input.context } : {}),
+    ...(input.remember ? { remember: input.remember } : {}),
+    json: input.json,
+    interactive: interactiveTerminal(),
+  };
+}
+
+function writeOpenResult(result: object, json: boolean, text: string): void {
+  process.stdout.write(json ? `${JSON.stringify(result, null, 2)}\n` : `${text}\n`);
+}
+
+function formatChoices(choices: Awaited<ReturnType<typeof currentChoices>>): string {
+  return choices
+    .map((choice) => {
+      const agents = choice.agents ? ` (${choice.agents.map((agent) => agent.id).join(", ")})` : "";
+      return `${choice.place}  ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}${agents}`;
+    })
+    .join("\n");
 }
 
 function interactiveTerminal(): boolean {
@@ -642,6 +835,11 @@ function errorResult(error: unknown): { status: "error"; code: string; message: 
       message: error.message,
       details: error.details,
     };
+  }
+  // Opening and settings errors (OpenArgumentError, SettingsError) carry their own code.
+  const code = error instanceof Error ? (error as unknown as { code?: unknown }).code : undefined;
+  if (error instanceof Error && typeof code === "string" && /^[a-z_]+$/.test(code)) {
+    return { status: "error", code, message: error.message };
   }
 
   return {

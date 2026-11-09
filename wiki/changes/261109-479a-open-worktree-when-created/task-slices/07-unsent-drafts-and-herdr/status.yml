@@ -1,0 +1,17 @@
+version: 1
+id: 07-unsent-drafts-and-herdr
+title: Unsent drafts where supported, and herdr bring-forward
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 02-open-on-create-and-switch
+  - 03-terminals-and-agents
+  - 04-app-places
+task_summary:
+  total: 4
+  done: 4
+  blocked: 0
+created_at: 2026-11-09T16:30:00.000Z
+updated_at: 2026-11-09T20:05:41.646Z

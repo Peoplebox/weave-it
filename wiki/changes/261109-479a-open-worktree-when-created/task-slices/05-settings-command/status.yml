@@ -1,0 +1,15 @@
+version: 1
+id: 05-settings-command
+title: weave settings open
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 01-open-command-tracer
+task_summary:
+  total: 3
+  done: 3
+  blocked: 0
+created_at: 2026-11-09T16:30:00.000Z
+updated_at: 2026-11-09T20:05:41.646Z

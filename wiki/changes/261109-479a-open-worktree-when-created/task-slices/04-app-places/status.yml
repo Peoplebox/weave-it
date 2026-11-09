@@ -1,0 +1,15 @@
+version: 1
+id: 04-app-places
+title: Open in VS Code, Cursor, Claude desktop, and T3 Code
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 01-open-command-tracer
+task_summary:
+  total: 5
+  done: 5
+  blocked: 0
+created_at: 2026-11-09T16:30:00.000Z
+updated_at: 2026-11-09T20:05:41.646Z

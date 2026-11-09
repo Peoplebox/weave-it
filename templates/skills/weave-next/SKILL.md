@@ -53,7 +53,7 @@ No active Weave change found. Run `weave change new` or `weave change switch`, t
 If the workspace keeps each change in its own folder (the error says so), say instead:
 
 ```text
-No active Weave change in this folder. Run `weave change list` to see each change's folder, open the one you want in a new session, and run `weave-next` there.
+No active Weave change in this folder. Run `weave change list` to see each change's folder, then `weave change switch <change>` to open the one you want, and run `weave-next` there.
 ```
 
 # Scope
@@ -204,6 +204,7 @@ Auto-advance recommendation (from `weave advance --dry-run --json` and `weave ch
 
 Change cleanup recommendation (worktree checkouts, where each change has its own folder):
 
+- **Switching and opening changes.** When the user wants to resume or switch to another change, run `weave change switch <change> --json` and handle `open.status` exactly as `weave-new` does (`opened`, `brought_forward`, `skipped`/`failed`, `not_attempted`, and `needs_choice` asked in chat exactly as in `weave-new`'s "Asking where changes open": ask what to start only for a `kind: "terminal"` choice, never for an app, then "just this once, or make it your default?", adding `--remember` only for the default). From inside the change's own folder nothing opens and `next_step` is the step to run here. "Open it again" is `weave change open <id> --json`; "open it in X instead" is `weave change open <id> --in <place> [--agent <agent>] --json` without `--remember`. To change where changes open from chat, run `weave settings open --in <place> [--agent <agent>] [--project] --json`, or `weave settings open --clear [--project] --json` to be asked again; neither opens anything. If any of these commands fails with an unknown option, the installed CLI is older than this skill: run it without the new options and tell the user to open the change folder in a new session.
 - Before recommending `weave change close`, or saying that nothing needs cleaning up, run `weave change list --fetch --json`. It waits for a fresh look at the remote; plain `weave change list` may answer from older remote data and only under-reports landed work.
 - Decide from `state.id` and label `id`s, never from `state.label` or label text, which may be reworded.
 - Only `landed` and `folder_missing` need attention. Recommend exactly the commands in that change's `state.next.commands`, or relay `state.next.text` when there are no commands.

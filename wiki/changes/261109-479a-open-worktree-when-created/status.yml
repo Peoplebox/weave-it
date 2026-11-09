@@ -1,0 +1,104 @@
+version: 1
+id: 261109-479a-open-worktree-when-created
+slug: open-worktree-when-created
+title: Open worktree when created
+type: feat
+stage: slices
+branch: change/261109-479a-open-worktree-when-created
+auto_advance:
+  questions_to_research: true
+  findings_to_questions: false
+  exploration_to_prd: true
+created_at: 2026-11-09T08:57:56.921Z
+updated_at: 2026-11-09T16:34:34.908Z
+checkout:
+  mode: worktree
+  repos:
+    root:
+      path: .
+      base: origin/main
+      base_commit: 211c08620569d2a1971ab47793a8b15c58896d18
+artifacts:
+  questions:
+    sources:
+      - discussion
+    updated_at: 2026-11-09T09:03:21.948Z
+  research:
+    sources:
+      - questions
+      - codebase
+    updated_at: 2026-11-09T09:36:09.041Z
+  exploration:
+    sources:
+      - discussion
+      - research
+    updated_at: 2026-11-09T14:48:03.618Z
+  prd:
+    sources:
+      - exploration
+      - sessions
+      - research
+    updated_at: 2026-11-09T14:50:38.919Z
+  architecture:
+    sources:
+      - prd
+      - research
+      - codebase
+      - discussion
+    updated_at: 2026-11-09T16:27:02.677Z
+  slices:
+    sources:
+      - architecture
+    updated_at: 2026-11-09T16:32:41.799Z
+runs:
+  - id: research-20261109T090324-gm35
+    lane: research
+    skill: weave-research
+    agent: claude
+    trigger: auto-advance
+    transition: questions_to_research
+    upstream_updated_at: 2026-11-09T09:03:21.948Z
+    launch: handoff
+    started_at: 2026-11-09T09:03:24.322Z
+    finished_at: 2026-11-09T09:36:09.041Z
+    result: succeeded
+  - id: prd-20261109T144806-6q3h
+    lane: prd
+    skill: weave-prd
+    agent: claude
+    trigger: auto-advance
+    transition: exploration_to_prd
+    upstream_updated_at: 2026-11-09T14:48:03.618Z
+    launch: handoff
+    started_at: 2026-11-09T14:48:06.720Z
+    finished_at: 2026-11-09T14:50:38.919Z
+    result: succeeded
+stress_tests:
+  exploration:
+    verdict: holds-with-changes
+    judged_at: 2026-11-09T14:48:03.809Z
+    artifact_updated_at: 2026-11-09T14:48:03.618Z
+    session: wiki/changes/261109-479a-open-worktree-when-created/sessions/20261109-201658-k7q2-exploration-stress-test.md
+    reason: Direction stands; default now fires for every caller, unsent drafts only
+      where supported, fixed tool list, fix flow out of scope, new switching and
+      SSH rules.
+  architecture:
+    verdict: holds-with-changes
+    judged_at: 2026-11-09T16:27:02.896Z
+    artifact_updated_at: 2026-11-09T16:27:02.677Z
+    session: wiki/changes/261109-479a-open-worktree-when-created/sessions/20261109-215409-r4tx-architecture-stress-test.md
+    reason: Option B stands; detection, timeouts, ordering, output assembly, version
+      skew and opener split tightened; mn61 now supersedes 261107-ohne.
+execution:
+  version: 1
+  branch: change/261109-479a-open-worktree-when-created
+  repos:
+    root:
+      path: .
+      mode: repo
+      branch: change/261109-479a-open-worktree-when-created
+      state: prepared
+      branch_status: already_active
+      prepared_head: 211c08620569d2a1971ab47793a8b15c58896d18
+      prepared_at: 2026-11-09T16:34:34.908Z
+      verified_at: 2026-11-09T16:34:34.908Z

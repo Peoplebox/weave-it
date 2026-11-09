@@ -33,6 +33,7 @@ import {
   changeFolderPath,
   ensureChangeWorktrees,
   readLocalChangeInfo,
+  mainCheckoutPath,
   recordCheckoutInStatus,
   listLocalChangeIds,
   readLocalState,
@@ -2825,4 +2826,62 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+export interface LocatedChange {
+  id: string;
+  title: string;
+  stage: StoredChangeStage;
+  checkout: CheckoutMode;
+  changePath: string;
+  // Worktree checkouts: the change folder recorded on this machine, if any.
+  folder?: string;
+  folderExists: boolean;
+  // The main checkout's real path, the key for per-project settings.
+  mainRoot: string;
+}
+
+// Finds a change and its folder without touching git state: no fetch, no worktree changes.
+// Used by `weave change open`.
+export async function locateChange(options: { cwd: string; change?: string; sessionPath?: string }): Promise<LocatedChange> {
+  const target = await resolveTarget(options.cwd, options.sessionPath);
+  const checkout = await workspaceCheckoutMode(target.path);
+  let change: ChangeSummary | undefined;
+  if (options.change) {
+    const changes = await readChangesWithWorktrees(target.path, await branchChangeIdForTarget(target.path));
+    try {
+      change = resolveChangeReference(changes, options.change);
+    } catch (error) {
+      // A change folder recorded on this machine but deleted: say so, and how to get it back.
+      if (error instanceof ChangeCommandError && error.code === "change_not_found" && checkout === "worktree") {
+        // Same matching as change references: full id, token, or slug fragment.
+        const ref = options.change.trim().toLowerCase();
+        const mainRoot = await mainCheckoutPath(target.path);
+        const ids = await listLocalChangeIds(await localStateDir(mainRoot));
+        const matches = ids.filter((id) => id === ref || id.split("-")[1] === ref || id.split("-").slice(2).join("-").includes(ref));
+        const id = matches.length === 1 ? matches[0]! : undefined;
+        const recorded = id ? (await readLocalChangeInfo(target.path, id))?.folder : undefined;
+        if (id && (!recorded || !(await pathExists(recorded)))) {
+          throw new ChangeCommandError("folder_missing", `The folder for ${id} isn't on this machine. Run \`weave change switch ${id}\` to recreate it.`, { id });
+        }
+      }
+      throw error;
+    }
+  } else {
+    change = (await currentContextForTarget(target)).current;
+    if (!change) {
+      throw new ChangeCommandError("no_active_change", "No active change. Pass a change, or run `weave change switch <change>` first.");
+    }
+  }
+  const folder = change.folder ?? (checkout === "worktree" ? (await readLocalChangeInfo(target.path, change.id))?.folder : undefined);
+  return {
+    id: change.id,
+    title: change.title,
+    stage: change.stage,
+    checkout,
+    changePath: change.changePath,
+    ...(folder ? { folder } : {}),
+    folderExists: folder ? await pathExists(folder) : false,
+    mainRoot: await mainCheckoutPath(target.path),
+  };
 }

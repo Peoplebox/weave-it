@@ -1,0 +1,14 @@
+version: 1
+id: 01-open-command-tracer
+title: weave change open with saved settings (tmux, herdr, claude, shell)
+status: done
+owner: ""
+repos:
+  - root
+depends_on: []
+task_summary:
+  total: 5
+  done: 5
+  blocked: 0
+created_at: 2026-11-09T16:30:00.000Z
+updated_at: 2026-11-09T20:05:41.646Z

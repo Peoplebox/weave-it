@@ -1,7 +1,7 @@
 ---
 id: 261107-ohne-each-change-gets-its-own-worktree-folder
 title: Each change gets its own folder of worktrees, made with plain git
-status: accepted
+status: superseded
 date: 2026-11-07
 owner: arpit016
 applies_to:
@@ -10,7 +10,7 @@ applies_to:
   - src/lib/task-prepare.ts
   - src/lib/git.ts
 supersedes: []
-superseded_by: null
+superseded_by: 261109-mn61-weave-opens-change-folders-in-the-place-the-person-chose
 ---
 
 # Each change gets its own folder of worktrees, made with plain git

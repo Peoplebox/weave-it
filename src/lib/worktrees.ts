@@ -459,8 +459,13 @@ export async function runChangeSetup(options: RunSetupOptions): Promise<SetupRes
 }
 
 async function workspaceLayout(rootPath: string): Promise<{ mainRoot: string; metadata: WorkspaceMetadata }> {
-  const mainRoot = await realpath((await mainWorktreePath(rootPath)) ?? rootPath);
+  const mainRoot = await mainCheckoutPath(rootPath);
   return { mainRoot, metadata: await requireMetadata(rootPath) };
+}
+
+// The main checkout's real path, the same from the main checkout or any change folder.
+export async function mainCheckoutPath(rootPath: string): Promise<string> {
+  return realpath((await mainWorktreePath(rootPath)) ?? rootPath);
 }
 
 async function requireMetadata(rootPath: string): Promise<WorkspaceMetadata> {

@@ -462,6 +462,10 @@ Options for `new`:
 --base <ref>           ref the change branch starts from, or <repo>=<ref> for one repo (repeatable);
                        defaults to the remote default branch
 --no-fetch             worktree checkouts: do not fetch the base branch first
+--skill <name>         the skill the change starts with, e.g. weave-explore; the new session's first step
+--context <text>       a one-line gist added to that first step
+--open <place>         worktree checkouts: open this change in <place>[:<agent>] this time only
+--no-open              worktree checkouts: don't open this change, whatever your default says
 --json                 print machine-readable JSON
 ```
 
@@ -483,7 +487,7 @@ Options for `new`:
 
 `weave change new` fetches each repo's remote default branch and starts the change from it. To start somewhere else, the most specific setting wins: `--base api=feature/x` for one repo (`root` is the workspace root), then `--base feature/x` for every repo, then a repo's `base` in `.weave/workspace.yml`. A plain branch name means your local branch when you have one, and otherwise the branch of that name on `origin`, fetched first; `origin/<branch>` always means the freshly fetched remote branch. If a repo does not have the branch you named, nothing is created and the error says which repo, so you can give it its own `--base`. Every check runs first, so a problem in any repo stops it before anything is created, and if a step fails partway it removes the worktrees and branches that run created. The workspace root's `.weave/workspace.yml` must be committed on the base branch, or the new folder would not be a Weave workspace.
 
-Open the printed folder in a new session to work on the change. `weave change list` shows every change folder from any checkout, `weave change switch <change>` prints where a change's folder is and creates it if it is missing. That includes a change that only exists as a `change/<id>` branch, such as a teammate's pushed change or one you closed earlier: it matches the id, token, or slug against change branches locally and on `origin`, fetches them, and gives every repo that has the branch a worktree tracking it (the others start fresh from their base), and `weave task prepare` adds worktrees for repos the change does not have yet without moving any checkout.
+Weave then opens the folder where you chose (see [Where changes open](#where-changes-open)); without a choice it prints the folder for you to open in a new session. `weave change list` shows every change folder from any checkout, `weave change switch <change>` opens a change's folder the same way and creates it if it is missing. That includes a change that only exists as a `change/<id>` branch, such as a teammate's pushed change or one you closed earlier: it matches the id, token, or slug against change branches locally and on `origin`, fetches them, and gives every repo that has the branch a worktree tracking it (the others start fresh from their base), and `weave task prepare` adds worktrees for repos the change does not have yet without moving any checkout.
 
 ```yaml
 checkout: worktree
@@ -503,6 +507,24 @@ repos:
 `copy` lists literal paths, copied when a worktree is created. `weave change setup` runs each worktree's `setup` once, at the first `weave-execute`, so planning never waits on installs. It only runs a command after a person approves that exact command with `weave change setup --approve` in a terminal, and the approval is remembered on that machine. Agents and auto-advance cannot approve, so a new or changed command always waits for you. Commands get `WEAVE_CHANGE_ID`, `WEAVE_CHANGE_DIR`, `WEAVE_REPO_ID`, `WEAVE_SOURCE_DIR` and `WEAVE_SLOT`. The slot is a small number unique among open changes on the machine, which a setup command can turn into ports, for example `PORT=$((3000 + WEAVE_SLOT * 10))`.
 
 `weave change close [change]` removes the change's worktrees once they have no uncommitted work, run from outside the change folder. It keeps every branch and says which ones are not on `origin`, so closing never deletes commits. Slots, setup approvals and logs live in `.git/weave/` of the main checkout and are never committed.
+
+### Where changes open
+
+With worktree checkouts, `weave change new` and `weave change switch` can open the change's folder for you, so you don't have to open a tab, go there, and start your agent yourself. The first time it matters, Weave asks where changes should open:
+
+1. **Where:** a terminal (a herdr tab or tmux window when you are working inside one, or an iTerm or Terminal window on macOS), an app (VS Code, Cursor, the Claude desktop app, T3 Code), or **don't open**.
+2. **What to start** (terminals only): Claude, Codex, opencode, Cursor's agent, one of your own agents, or just a shell.
+
+At a terminal you get a menu. In an agent's guided flow (`weave-new`, `weave-next`), the agent asks you in chat with the same choices. Last, you choose **just this once** (you're asked again next time) or **make it my default**. A default applies to every project on this machine and is used from then on without asking, by you, your agent, or a script. "Don't open, don't ask again" brings back the old behaviour. When nobody can be asked and there is no default, nothing opens and the output is unchanged.
+
+- **The first step.** The new session starts with the change's next step, for example `use the weave-explore skill for change 261107-a1b2-login: …`, filled in but not sent where the tool supports it; otherwise the step is printed for you to paste. `weave-new` passes it with `--skill`/`--context`; switching uses the stored step, or `weave-next` once the change has moved on.
+- **Already there.** From inside the change's folder nothing opens. A tmux window already sitting in the folder is brought forward instead of opening another.
+- **One change only.** `--no-open` or `--open <place>[:<agent>]` on `new` and `switch` (or telling your agent "don't open this one") never changes the default. `weave change open [change] [--in <place>] [--agent <agent>]` reopens a change, or opens it somewhere else, without fetching or touching worktrees.
+- **Changing it.** `weave settings open` shows the menu again; `weave settings open --in cursor --project` sets this project only; `--clear` makes Weave ask again. Settings live in `~/.weave/settings.yml`, never in the project. You can add your own agents there (`agents: { pi: { command: "pi" } }`) and point a listed tool at an unusual install path (`locations: { cursor: /opt/cursor/bin/cursor }`).
+- **When it can't open.** The change is always created or switched to anyway; Weave says what went wrong in one line and prints the folder and step. Over SSH, Mac windows and apps are skipped and only herdr and tmux open. A default whose tool was uninstalled is cleared and you are asked again; a tool that just isn't available right now (not inside tmux, app not responding) keeps the default. T3 Code can't be told to open a folder yet, so Weave brings it up and asks you to add the folder there.
+- **Setup is separate.** Opening never runs or approves `weave change setup`.
+- **Independent of auto-advance.** This default only decides where changes open. Auto-advance hand-offs keep their own `advance.*` settings and never use it.
+- `WEAVE_NO_OPEN=1` turns opening off; `WEAVE_NO_PROMPT=1` never shows the menu. Agents (Claude Code, Cursor, opencode, Codex) and `--json` never get the menu either: they get `open.status: "needs_choice"` with the choices.
 
 Worktree checkouts need macOS or Linux for now. With `in-place` checkouts, `weave change new` refuses to start on top of another change branch unless you pass `--base`, and `weave task prepare` refuses a repo that sits on an unrelated branch, and switches back the repos it already moved if a later one fails.
 
