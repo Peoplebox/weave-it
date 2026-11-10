@@ -163,6 +163,8 @@ Reviewers start fresh (never a fork of the building conversation) and see only t
 
 Guidelines live in `.weave/coding-guidelines.md` (decision `261110-dtld`): one shared file at the workspace root, and an optional file at each registered repo's root. Both apply to that repo's code and the repo file wins on conflict; the reviewer weighs them, the CLI only resolves files. A repo-mode project has one file. Packages read them from the change's own checkout folder, so a change's guideline edits apply to its own review. A missing file is listed as absent ("no shared guidelines found"); a registered repo with no checkout makes the package partial.
 
+A guidelines file can act as an index that links to more guideline files anywhere in its repo (for example one for models and one for controllers). The CLI still lists only the `.weave/coding-guidelines.md` files; following links is the reviewer's job. Slice and final reviewers read each listed file, follow its links (relative to the linking file) to the files that cover code in their diff, treat a more specific linked file as winning over the index that links to it, and cite the linked file in `fails.ref`. Each report has a **Guidelines read** section listing the files read and any linked file skipped or missing; a broken link is not a code finding. Fix checkers follow links to the files that cover the round diff. Only `.weave/coding-guidelines.md` edits go under a change package's "Plan and docs edits"; edits to linked files appear in the ordinary diff, and the final reviewer judges them as documents too.
+
 `weave init` writes the starter shared file when absent (sections for error handling, security, testing expectations, naming and structure, and documentation). `weave review guidelines init` writes it for existing projects; `--repo <id>` (workspace mode only) writes a heading-only repo file. Neither ever overwrites, and no other command (`weave change new`, `weave doctor`, `weave add`, `weave agent update`) creates the file.
 
 ### Visibility
@@ -265,6 +267,7 @@ Per change: `weave review skip --reason "<why>"` and `weave review unskip`.
 ## Change History
 
 - 2026-11-10 (change `261110-g2wn-code-reviewers`): introduced slice and final code reviews, the `weave-review` skill and briefs, the `weave review` command group, snapshot boundaries, review records, out-of-date detection, rulings with reopen, the final-review gate and verdicts, coding guidelines files, workspace review settings, and per-change skip.
+- 2026-11-10 (direct edit on main): guidelines files can link to more guideline files; reviewer briefs follow the links and list the files they read under **Guidelines read**.
 
 ## Open Questions
 

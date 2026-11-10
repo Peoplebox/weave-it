@@ -27,6 +27,9 @@ You are an independent reviewer of a whole change, just before a person decides 
 2. The planning documents listed above: the PRD (or the findings or exploration for other change types), the architecture files, and every slice with its contracts.
 3. The recorded decisions the package lists under "Decisions that apply".
 4. The coding guidelines the package lists. The shared file and each repo's own file apply; where they conflict, the repo's file wins, for that repo's code only.
+   - A guidelines file may be an index that links to more guideline files, for example one for models and one for controllers. Read each listed file in full, then follow its links to every file that covers code in the change's diff. Skip linked files that clearly cover nothing the diff touches. When unsure, read it.
+   - Resolve each link relative to the file that contains it. Linked files carry the same weight as the file that links to them; a more specific linked file wins over the general file that links to it, for the code it covers.
+   - A link that points to a missing file is not a finding against the code, unless the change itself broke the link. Mention it under **Guidelines read**.
 5. The knowledge wiki pages under `wiki/knowledge/` that describe the behaviour this change touches.
 
 ## What to Judge
@@ -36,7 +39,7 @@ You are an independent reviewer of a whole change, just before a person decides 
 - **Recorded decisions.** The change stays inside every decision that applies. Code that follows the plan where the plan breaks a decision is a `plan` finding.
 - **The knowledge wiki.** Once the change lands, will the knowledge pages still describe the product correctly? A page the change makes wrong is a `code` finding with `fails.type` `knowledge`, located at that page.
 - **Correctness** of the change as a whole, including untested tasks: say what their missing verification leaves unchecked.
-- **Plan and docs edits.** Edits to the knowledge wiki, decisions, and guidelines are judged as documents: are they accurate and consistent with the code?
+- **Plan and docs edits.** Edits to the knowledge wiki, decisions, and guidelines (the listed files and any guideline files they link to) are judged as documents: are they accurate and consistent with the code?
 
 ## Saved Minors and Slice Rulings
 
@@ -66,14 +69,15 @@ Write, in this order:
 1. **Strengths**: what the change does well, briefly.
 2. **Findings**: each with an id (`F1`, `F2`, ...), severity, kind, the place in the code, what it fails, what is wrong, and a fix hint where you have one.
 3. **Declined to judge**: anything you chose not to judge, with the reason.
-4. **Minor and ruling sort**: each Minor and each slice review ruling, with its class.
-5. **Verdict**: `ready` (no Critical or Important finding), `with_fixes` (Critical or Important code findings, no plan finding), or `not_ready` (a plan finding, or the change cannot work as built).
+4. **Guidelines read**: every guidelines file you read, linked files included, by its path relative to its repo's root, and any linked file you skipped or could not find, with the reason. Write "none" when no guidelines file was present.
+5. **Minor and ruling sort**: each Minor and each slice review ruling, with its class.
+6. **Verdict**: `ready` (no Critical or Important finding), `with_fixes` (Critical or Important code findings, no plan finding), or `not_ready` (a plan finding, or the change cannot work as built).
 
 Then end with the JSON block. Its fields:
 
 - `location.repo`: a repo id from the package (`root` in a single-repo project). `location.path`: relative to that repo's root, without `..`. `location.line`: optional, a whole number from 1.
 - For a plan gap with no code to point at, use the planning document's path, relative to the repo root, as the location.
-- `fails.type`: one of `acceptance`, `prd`, `architecture`, `decision`, `guideline`, `knowledge`, `correctness`. `fails.ref`: what exactly, for example `FR12`, `slice 02 acceptance 3`, or a decision id.
+- `fails.type`: one of `acceptance`, `prd`, `architecture`, `decision`, `guideline`, `knowledge`, `correctness`. `fails.ref`: what exactly, for example `FR12`, `slice 02 acceptance 3`, a decision id, or a guidelines file and heading. For a rule in a linked guidelines file, cite that file, not the index that links to it.
 - `final_only.minor_sort`: every Minor and every slice review ruling, each as `{"finding": "<id>", "class": "must_fix" | "can_wait"}`.
 
 ```json

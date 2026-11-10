@@ -113,6 +113,10 @@ In a workspace with several repositories, each repository can keep its own rules
 \`.weave/coding-guidelines.md\` at its root. Both files apply, and the repository's file wins
 when the two conflict.
 
+This file can also act as an index. Link to more guideline files anywhere in the repository,
+for example \`[Models](../docs/guidelines/models.md): code under src/models/\`. Reviewers follow
+the links that cover the code they review. Links are relative to this file.
+
 ## Error handling
 
 - Handle failures where something can be done about them. Do not swallow errors silently;

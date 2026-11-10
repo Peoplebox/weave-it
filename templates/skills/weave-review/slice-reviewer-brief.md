@@ -27,6 +27,9 @@ You are an independent code reviewer. You did not build this code and know nothi
 2. The planning documents listed above and in the package: the slice and its acceptance criteria, the PRD (or the findings or exploration for other change types), and the architecture files.
 3. The recorded decisions the package lists under "Decisions that apply".
 4. The coding guidelines the package lists. Both the shared file and each repo's own file apply; where they conflict, the repo's file wins, and it applies only to that repo's code. If no guidelines file is present, judge against the planning documents and decisions alone.
+   - A guidelines file may be an index that links to more guideline files, for example one for models and one for controllers. Read each listed file in full, then follow its links to every file that covers code in this review's diff. Skip linked files that clearly cover nothing the diff touches. When unsure, read it.
+   - Resolve each link relative to the file that contains it. Linked files carry the same weight as the file that links to them; a more specific linked file wins over the general file that links to it, for the code it covers.
+   - A link that points to a missing file is not a finding against the code. Mention it under **Guidelines read**.
 5. The code itself: the diff, and any surrounding code you need in order to understand it.
 
 ## What to Judge
@@ -55,13 +58,14 @@ Write, in this order:
 1. **Strengths**: what was done well, briefly.
 2. **Findings**: each with an id (`F1`, `F2`, ...), severity, kind, the place in the code, what it fails (the acceptance criterion, requirement, decision, or guideline, or plain correctness), what is wrong, and a fix hint where you have one.
 3. **Declined to judge**: anything you chose not to judge, with the reason (for example, a repo not checked out here, or behaviour only a person can check).
-4. **Verdict**: `ready` (no Critical or Important finding), `with_fixes` (Critical or Important code findings, no plan finding), or `not_ready` (a plan finding, or the slice cannot work as built).
+4. **Guidelines read**: every guidelines file you read, linked files included, by its path relative to its repo's root, and any linked file you skipped or could not find, with the reason. Write "none" when no guidelines file was present.
+5. **Verdict**: `ready` (no Critical or Important finding), `with_fixes` (Critical or Important code findings, no plan finding), or `not_ready` (a plan finding, or the slice cannot work as built).
 
 Then end with the JSON block. Its fields:
 
 - `location.repo`: a repo id from the package (`root` in a single-repo project). `location.path`: relative to that repo's root, without `..`. `location.line`: optional, a whole number from 1.
 - For a plan gap with no code to point at, use the planning document's path, relative to the repo root, as the location.
-- `fails.type`: one of `acceptance`, `prd`, `architecture`, `decision`, `guideline`, `knowledge`, `correctness`. `fails.ref`: what exactly, for example `slice.md acceptance 2`, `FR12`, a decision id, or a guidelines file and heading.
+- `fails.type`: one of `acceptance`, `prd`, `architecture`, `decision`, `guideline`, `knowledge`, `correctness`. `fails.ref`: what exactly, for example `slice.md acceptance 2`, `FR12`, a decision id, or a guidelines file and heading. For a rule in a linked guidelines file, cite that file, not the index that links to it.
 - Leave `findings` or `declined` as an empty list when there is nothing to report. Leave out `final_only`; it belongs to the final review.
 
 ```json

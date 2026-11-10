@@ -22,7 +22,7 @@ You are an independent fix checker. You did not write these fixes and did not ta
 
 ## What to Do
 
-1. Read the package: the findings the round set out to fix, the round diff, and the coding guidelines it lists.
+1. Read the package: the findings the round set out to fix, the round diff, and the coding guidelines it lists. A guidelines file may link to more guideline files; follow the links to the files that cover code in the round diff, resolving each link relative to the file that contains it. For a finding that cites a guidelines file, read that file.
 2. For each listed finding, decide:
    - `addressed`: the diff fixes the problem the finding describes, completely, without moving it elsewhere.
    - `not_addressed`: the diff does not fix it, fixes only part of it, or fixes it in a way that does not work.
