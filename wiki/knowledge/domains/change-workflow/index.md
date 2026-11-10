@@ -1,6 +1,6 @@
 # Change Workflow
 
-This domain captures the current behavior of Weave's change lifecycle and the agent skills that participate in it: questions, research, exploration, stress tests, PRD, architecture, findings, slices, task execution, knowledge, capture, clarify, next, fix, and new.
+This domain captures the current behavior of Weave's change lifecycle and the agent skills that participate in it: questions, research, exploration, stress tests, PRD, architecture, findings, slices, task execution, code review, knowledge, capture, clarify, next, fix, and new.
 
 A Weave change moves through artifact lanes (`questions`, `research`, `exploration`, `prd`, `findings`, `architecture`, `slices`, `knowledge`) tracked in `wiki/changes/<change-id>/status.yml`. Each lane has an owning skill that creates or revises durable artifacts and records lifecycle progress via `weave change progress <lane>`. Feature changes start at `stage: exploration` with a scaffolded `exploration.md`; non-feature changes start at the non-lane `stage: started` with no scaffolded artifact.
 
@@ -22,7 +22,8 @@ Sliced changes store work under `task-slices/<NN>-<slug>/`; legacy flat changes 
 - [weave-clarify](features/weave-clarify/behavior.md): focused artifact clarification, including `findings.md` and explicit architecture folder/facet restructuring.
 - [weave-issues](features/weave-issues/behavior.md): **superseded** by `weave-slices` for flat `tasks.md` generation; retained for legacy flat-mode reference only.
 - [weave-prepare](features/weave-prepare/behavior.md): **deprecated**; branch prep absorbed into `weave-execute`. `weave task prepare` CLI remains.
-- [weave-execute](features/weave-execute/behavior.md): agent-first local execution in slice mode or flat legacy mode, including branch prep, dependency handling, rollup episode boundaries, and task evidence updates.
+- [weave-execute](features/weave-execute/behavior.md): agent-first local execution in slice mode or flat legacy mode, including branch prep, dependency handling, rollup episode boundaries, task evidence updates, and the code review hook.
+- [code-reviews](features/code-reviews/behavior.md): slice reviews and the final review by fresh reviewers (`weave-review` skill plus the `weave review` command group): snapshots, packages, findings, fix rounds, plan problems, rulings, out-of-date detection, the gate, verdicts, coding guidelines, and switches. See also its [decision tables](features/code-reviews/decision-tables.md).
 - [weave-capture](features/weave-capture/behavior.md): two-mode capture (artifact vs session-only) of the current discussion, including the Defensive Lane Verification step for explicit target/substance mismatches.
 
 ## Domain-Wide Behavior

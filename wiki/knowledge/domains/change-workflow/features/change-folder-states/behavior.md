@@ -24,7 +24,7 @@ In worktree checkouts, `weave change list` tells developers and agents what each
 
   A shared age line ends the list. `change folders unavailable at <path> (drive not mounted?)` appears once at the top when it applies.
 - **Freshness.** Local facts are read live on every list: folders, git's worktree records, uncommitted files, local commits, and branches. Remote facts come from the last background refresh, so a change may show `in_progress` briefly after it merged, never `landed` because data is old. The age line reads `as of last fetch, <age>`, plus any refresh problem and ` · refreshing now, run again in a few seconds for the latest` while a refresh runs. A fresh `--fetch` shows no age.
-- **Background refresh.** After printing, `list` starts a detached, unref'd `weave change refresh --root <main>` (hidden command). At most one runs at a time; none starts within 60 seconds of the last; each repo gets about 30 seconds. `--fetch` joins a running refresh or runs one in-process and waits. `WEAVE_NO_BACKGROUND_REFRESH=1` disables the spawn.
+- **Background refresh.** After printing, `list` starts a detached, unref'd `weave change refresh --root <main>` (hidden command). At most one runs at a time; none starts within 60 seconds of the last; each repo gets about 30 seconds. `--fetch` joins a running refresh or runs one in-process and waits. `WEAVE_NO_BACKGROUND_REFRESH=1` disables the spawn. After its landed check the refresh also runs `weave review prune` logic, deleting code review snapshot refs and packages of changes that fully landed or no longer exist (local git only, failures ignored; see [code-reviews](../code-reviews/behavior.md)).
 - **`weave status`** reads only the saved attention snapshot. It prints `<N> change(s) need attention (<n> landed, <m> folder missing). Run 'weave change list'.` when the total is above zero, and adds `changes_attention` to `--json` (`null` without a snapshot or outside worktree mode). See [weave-status](../../../cli-distribution/features/weave-status/behavior.md).
 
 ## Domain Model
@@ -152,7 +152,7 @@ To roll everything back, delete those files, and delete every ref under `refs/we
 - Starting branches: `src/lib/change-bases.ts` (`recoverBase`, `resolveChangeBase`, `recordBases`, `rejectReflogBase`)
 - Facts: `src/lib/change-facts.ts` (`gatherFacts`, `changesRootUnavailable`, `changeIdPattern`)
 - States: `src/lib/change-states.ts` (`deriveState`, `attentionCounts`, `stateLine`, `nextLine`)
-- Refresh: `src/lib/change-refresh.ts` (`runRefresh`, `planBackgroundRefresh`, `spawnBackgroundRefresh`, `joinOrRunRefresh`, `remoteFacts`)
+- Refresh: `src/lib/change-refresh.ts` (`runRefresh`, `planBackgroundRefresh`, `spawnBackgroundRefresh`, `joinOrRunRefresh`, `remoteFacts`); review cleanup it calls: `src/lib/review/prune.ts` (`pruneReviews`)
 - Snapshot: `src/lib/change-attention.ts`
 - Git primitives: `src/lib/git.ts` (`mergeTreeWrite`, `onFirstParentLine`, `cherryMarks`, `gitVersionCaps`, `lsRemoteHeads`, `fetchNoPrompt`, `noPromptEnv`, `worktreeLockedOnDisk`)
 - List, close, switch wiring: `src/lib/changes.ts` (`listWorktreeChanges`, `describeFreshness`, `closeChange`, `missingFolderChanges`, `refreshAttention`); `src/lib/worktrees.ts` (`planTarget`, `removeChangeWorktrees`, `ensureChangeWorktrees`)
@@ -163,6 +163,7 @@ To roll everything back, delete those files, and delete every ref under `refs/we
 ## Change History
 
 - 2026-11-09 (change `261107-4oq6-flag-stale-change-folders-in-weave`): introduced change states, the shared landed check, remembered starting branches, the background remote refresh, missing-folder `close`/`switch`, and the `weave status` attention line.
+- 2026-11-10 (change `261110-g2wn-code-reviewers`): the background refresh prunes review snapshot refs and packages of landed or missing changes; `weave change close` keeps them.
 
 ## Open Questions
 

@@ -15,6 +15,7 @@ The opencode slash wrapper `/weave-execute` loads the `weave-execute` skill. The
 - Reads tasks from the selected slice's `tasks.md` (or walks slices for `all`).
 - Selector: `<slice-id> <task-id>` (e.g. `01 T1`) or `all`.
 - Runs `weave slice rollup` at episode boundaries (start and end of execution) for the affected slice(s).
+- Chooses slices from `ready_slices` in `weave slice rollup --all --json` instead of working out readiness from `depends_on`. A selected `pending` slice must be listed there; otherwise the skill names the `depends_on` slices holding it back (not done yet, or, while code review is active, not reviewed yet or waiting on a person) and stops before prepare. A slice already `in_progress` can continue.
 - Branch prep uses the selected slice's `status.yml.repos` and passes those repo ids to `weave task prepare --repo <id>`. Registered workspace repos outside the selected slice are not switched or blocked.
 
 **Flat legacy mode** (when only change-root `tasks.md` exists):
@@ -82,6 +83,21 @@ Only `T#` tasks execute directly. `QF#` findings and `R#` refactor records are s
 - Downstream tasks whose dependencies failed are skipped and summarized.
 - HITL tasks are included in `all`, but the agent pauses before each HITL task for required human input.
 
+## Code Review Hook
+
+In slice mode, finishing a slice includes its code review (see [code-reviews](../code-reviews/behavior.md)). `weave-execute` only records where the slice started and hands over; `weave-review` does the reviewing.
+
+- Before the first task of a slice moves to `in_progress`, it runs `weave review status --slice <slice-id> --json`.
+- `active: false` (`inactive_cause`: `change_skipped`, `workspace_off`, or `skill_not_installed`): every review step is skipped and the run is otherwise unchanged. This covers projects that updated `weave-execute` but never installed `weave-review`.
+- `active: true` and the slice is still `pending`: it records the start snapshot before changing any file with `weave review snapshot --slice <slice-id> --at start --json` (an existing start snapshot is kept). A slice already `in_progress` without `review.start_ref` gets no late snapshot; its review then measures from the change base.
+- After the slice's last task in the run it runs `weave slice rollup --all --json`. When review is active and the slice reports `ready_for_review: true` (every active task `done` or `not_tested`), it hands over in the same session, in the foreground: load the `weave-review` skill and run its slice review for `<id>`, reading it from one of `skill_paths` if it cannot be loaded by name.
+- It waits for the review, fix rounds, and rulings before starting another slice, and never runs a review in the background.
+- When the review stops on a plan problem (`waiting_on_person`), the run ends there and the user is told what to decide.
+- After the review it rolls up again and takes any next slice from `ready_slices`. It does not change task statuses because of review fixes or rulings.
+- The final summary lists slice reviews handed to `weave-review` and their outcome, or that review was inactive.
+
+The skill also handles the `skills_available` notice: it is suppressed unless `weave-review` is among the missing skills, and then the user is told how to install it.
+
 ## Task Evidence
 
 `weave-execute` updates `tasks.md` narrowly:
@@ -109,7 +125,8 @@ It does not rewrite unrelated task wording, unrelated sections, `QF#` entries, `
 
 ## Source Anchors
 
-- Skill: `templates/skills/weave-execute/SKILL.md`
+- Skill: `templates/skills/weave-execute/SKILL.md` (`# Code Review Hook`)
+- Review commands used by the hook: `src/commands/review/status.ts`, `src/commands/review/snapshot.ts`; readiness: `src/lib/review/rules.ts` (`isReadyForReview`, `satisfiesDependents`)
 - Wrapper: `templates/opencode/commands/weave-execute.md`
 - Installed copies: `.agents/skills/weave-execute/SKILL.md`, `.claude/skills/weave-execute/SKILL.md`, `.opencode/commands/weave-execute.md`
 - Prepare: `src/commands/task.ts`, `src/lib/task-prepare.ts`
@@ -123,6 +140,7 @@ It does not rewrite unrelated task wording, unrelated sections, `QF#` entries, `
 - 2026-06-09 (change `260609-rrsq-weave-slice`): dual-mode slice vs flat legacy execution; built-in branch prep; rollup episode boundaries; slice selector `/<slice-id> <task-id>`.
 - 2026-06-12 (change `260611-cuvh-slices-execution-default-afk`): slice-mode prepare now passes the selected slice's `status.yml.repos` to `weave task prepare --repo <id>`, so workspace repos outside the selected slice are not switched or blocked.
 - 2026-11-01 (branch `change/questions-research-skills`): checks recorded decisions before changing code, stops on a conflict, and reports decisions consulted and candidate ADRs.
+- 2026-11-10 (change `261110-g2wn-code-reviewers`): added the code review hook (activation check, start snapshot, hand-over to `weave-review` when a slice is ready for review, wait before the next slice) and slice selection from rollup's `ready_slices`.
 
 ## Open Questions
 

@@ -35,6 +35,7 @@ Keep the reasons behind long-lived engineering decisions where every agent and d
 | `weave-stress-test` | On a passing `architecture` verdict, accepts proposed decisions. `waived` accepts nothing, and `needs-reshaping` leaves them proposed |
 | `weave-fix`, `weave-execute` | Check before changing code, stop on a conflict, name what was consulted, and flag candidates |
 | `weave-next` | Mentions proposed decisions waiting for confirmation |
+| Code reviews (`weave-review`, `weave review`) | Review packages list accepted decisions whose `applies_to` matches a reviewed file; reviewers flag code or plans that break one. Reviews and rulings store each cited decision's hash (body without frontmatter, plus `superseded_by`), so superseding a decision marks those reviews out of date (plan changed) and reopens rulings that cite it, while a status-only edit does not. See [code-reviews](../code-reviews/behavior.md) |
 | `AGENTS.md` | A marked section added by `weave init` and the first `weave adr new`, append-only, for agents outside a Weave skill |
 
 ## Source Anchors
@@ -47,8 +48,9 @@ Keep the reasons behind long-lived engineering decisions where every agent and d
 ## Change History
 
 - 2026-11-01 (branch `change/questions-research-skills`): added `weave adr`, the append-only `AGENTS.md` guidance, and decision checks across the skills; backfilled this repo's first decisions.
+- 2026-11-10 (change `261110-g2wn-code-reviewers`): code reviews judge against applicable decisions, and superseding a decision reopens rulings and marks reviews that cite it out of date.
 
 ## Open Questions
 
-- Whether `weave adr check` should feed a reviewer step or a blocking check once one exists.
+- Whether `weave adr check` should feed a blocking check. Code reviews now judge against applicable decisions through their packages, but do not call `weave adr check`.
 - Whether product decisions get lost the same way and need the same treatment.

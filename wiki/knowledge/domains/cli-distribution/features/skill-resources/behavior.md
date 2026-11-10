@@ -16,6 +16,7 @@ Examples:
 - `templates/skills/weave-architect/schema-template.md`
 - `templates/skills/weave-architect/api-contract-template.md`
 - `templates/skills/weave-architect/frontend-backend-template.md`
+- `templates/skills/weave-review/slice-reviewer-brief.md`, `fix-check-brief.md`, `final-reviewer-brief.md`, `review-record-template.md` (the code review briefs and record layout)
 
 Resource discovery is non-recursive. Nested folders under a skill directory are not managed resources in v1.
 
@@ -41,6 +42,7 @@ The resource key is `<skill>/<resource-file>`.
 
 - `weave agent install <agent>` installs missing resources and records manifest entries.
 - `weave agent update <agent>` updates resources only when the installed file still matches the prior manifest hash.
+- `weave agent update <agent>` adds a resource that is new to a skill only when that skill is installed for the agent (it has a `skills` entry in the manifest). It never creates resource files for a skill the agent has not installed, so updating after a new skill ships (for example `weave-review`) does not drop its briefs into the project; `weave agent install <agent>` installs the skill and its resources together.
 - User-modified resources are preserved during install and update; the operation reports them as `modified`.
 - `weave agent reset <agent> [skill]` overwrites managed resources from bundled defaults and refreshes the manifest.
 - `weave agent diff <agent> [skill]` includes resource diffs as `resource:<skill>/<resource-file>`.
@@ -67,16 +69,17 @@ Each template has frontmatter with `facet` and `description`. Users can add cust
 
 ## Source Anchors
 
-- Resource discovery and operations: `src/lib/agent-skills.ts` (`listDefaultSkillResources`, `installArtifact`, `updateArtifact`, `resetArtifact`, `diffAgentSkills`)
+- Resource discovery and operations: `src/lib/agent-skills.ts` (`listDefaultSkillResources`, `installArtifact`, `updateArtifact` with `owningSkillName`, `resetArtifact`, `diffAgentSkills`)
 - Bundled resources: `templates/skills/weave-prd/prd-template.md`, `templates/skills/weave-knowledge/knowledge-templates.md`, `templates/skills/weave-architect/*-template.md`
 - Manifest: `.weave/agents.yml`
-- Tests: `tests/agent-skills.test.ts`
+- Tests: `tests/agent-skills.test.ts` (including "never creates resource files for a skill the agent has not installed during update", and `weave-review` installing with its four resources)
 
 ## Change History
 
 - 2026-06-05 (change `260605-wohe-customizable-prd-template`): established direct child PRD template resources.
 - 2026-06-06 (change `260606-k0l6-architecture-folder`): added direct child architecture template resources and tests covering install, update, reset, diff, and user modification preservation.
 - 2026-10-20 (branch `change/questions-research-skills`): added sub-agent templates installed to `.claude/agents/`, and new skill resources for questions, research, the product shape, and clarify target rules; the architecture index template gained Options Considered and Slices Readiness.
+- 2026-11-10 (change `261110-g2wn-code-reviewers`): added the `weave-review` resources; `weave agent update` no longer installs new resources for a skill the agent has not installed.
 
 ## Open Questions
 

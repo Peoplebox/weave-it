@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Surface package and skill staleness to both human developers and AI agents in a single structured shape that travels through the same commands without corrupting machine-readable output.
+Surface package and skill staleness, and bundled skills that are not installed, to both human developers and AI agents in a single structured shape that travels through the same commands without corrupting machine-readable output.
 
 ## Current Behavior
 
@@ -22,8 +22,11 @@ Notices are computed from local manifest state plus a cached npm registry lookup
 | `package_outdated` | cached npm latest > installed `weave-it` package version                                                 | `weave-it <latest> is available (installed <installed>). Run 'weave status' for details.`                           | `{installed, latest}`                                    |
 | `skills_modified`  | one or more installed `SKILL.md` files have a disk hash that differs from the manifest `installed_hash`  | `<N> installed skill file(s) have been modified locally. Run 'weave status' for details.`                           | `{skills: [{agent, name, kind}]}`                        |
 | `skills_outdated`  | one or more installed skills' `installed_from` differs from the currently bundled `last_changed_in`      | `<N> installed skill file(s) are out of date. Run 'weave agent update --all' or 'weave status' for details.`        | `{skills: [{agent, name, kind, installed_from, current}]}` |
+| `skills_available` | a configured agent (one whose manifest entry already holds skills) lacks one or more bundled skills     | `Bundled skills not installed for <agent>: <skill>, ...[; <agent>: ...]. Run 'weave agent install <agent>'[ and ...] to add them.` | `{agents: {<agent>: [<skill>, ...]}}`                    |
 
 `skills_modified` wins over `skills_outdated` for the same skill: if the disk file was edited, the skill is reported as `modified` and `skills_outdated` is suppressed for that entry.
+
+`skills_available` is one notice for all agents, listing missing skills per agent in sorted order. It is not emitted without a manifest, for an agent with no installed skills, or when every configured agent has every bundled skill. It exists because `weave agent update` never installs new skills, so a newly bundled skill (such as `weave-review`) would otherwise go unnoticed.
 
 ## Tier 1 Commands
 
@@ -73,6 +76,7 @@ Notice handling in skill responses is intentionally not the same as the raw CLI 
 - `package_outdated`: show only when present, with the user-facing copy `A newer Weave version is available. Run \`weave status\` for details, then upgrade Weave when convenient.`
 - `skills_outdated`: suppress unrelated skills. Mention only the invoked skill or multiple skills used in the current workflow, with user-facing copy that points to `weave status` and `weave agent update --all`.
 - `skills_modified`: suppress unless the invoked skill is modified locally or the user is asking about skill updates. Mention local edits with user-facing copy that points to `weave status` or `weave agent diff`.
+- `skills_available`: `weave-execute`, `weave-next`, and `weave-review` carry an extra rule after the shared block: suppress it unless `weave-review` is one of the missing skills, then say `Code reviews are available but the \`weave-review\` skill is not installed for <agent>. Run \`weave agent install <agent>\` to add it.` Other skills carry no rule for it, and the shared block does not name it.
 
 Skills should not say `Notices: ...`, `The command returned notices`, raw `notices[].message`, full notice JSON, or full skill lists unless the user asks for diagnostics.
 
@@ -86,7 +90,7 @@ The npm cache file lives at `~/.weave/cache/npm-version.json` and has a 24-hour 
 
 ## Source Anchors
 
-- Notice types and gathering: `src/lib/notices.ts` (`gatherNotices`, `detectSkillDrift`, `isNewerVersion`)
+- Notice types and gathering: `src/lib/notices.ts` (`gatherNotices`, `detectSkillDrift`, `detectAvailableSkills`, `isNewerVersion`)
 - npm version check + cache: `src/lib/npm-version.ts` (`getNpmVersionInfo`)
 - Tier 1 wiring: `src/lib/with-notices.ts` (`withNotices`)
 - Tier 1 commands: `src/commands/workspace.ts`, `src/commands/status.ts`, `src/commands/doctor.ts`, `src/commands/change.ts` (`new`, `current`, `status` subcommands)
@@ -99,7 +103,8 @@ The npm cache file lives at `~/.weave/cache/npm-version.json` and has a 24-hour 
 - 2026-06-03 (change `260603-piln-npm-and-skill-versioning-and-updates`): notices introduced; Tier 1 set of five commands defined; `--json notices` contract and stderr footer rules established; `WEAVE_NO_NOTICES` and `NO_UPDATE_NOTIFIER` opt-outs added; `# Surface Weave Notices` byte-identical block embedded in all 10 bundled skills.
 - 2026-06-07 (change `260607-1mo4-fixes-around-existing-commands`): bundled skills replaced `# Surface Weave Notices` with `# Silent Weave Command Output`; Tier 1 command JSON notices remain available for automation, but skills now suppress raw command output and summarize only user-relevant notices or blockers.
 - 2026-06-07 (change `260607-vuwa-architecture-skill-update`): `weave doctor` became the sixth Tier 1 command and includes notices in `--json` output through `withNotices()`.
+- 2026-11-10 (change `261110-g2wn-code-reviewers`): added the `skills_available` notice kind for bundled skills a configured agent has not installed.
 
 ## Open Questions
 
-- Should adding a brand-new bundled skill emit a separate `skills_new` notice kind, or stay rolled into `skills_outdated`? Exploration listed `skills_new` as a v1 kind; v1 implementation deferred it.
+- Resolved: a brand-new bundled skill is announced by the separate `skills_available` notice kind rather than rolled into `skills_outdated`.

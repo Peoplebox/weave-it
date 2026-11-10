@@ -69,11 +69,13 @@ weave init --mode repo --yes
 What happens:
 
 - Weave creates `wiki/knowledge/`, `wiki/changes/`, `.weave/sync.yml`, and `.weave/architecture-considerations.md` if missing.
+- Weave writes the starter `.weave/coding-guidelines.md` if missing and lists it in `created`.
 - Weave writes `.weave/workspace.yml` with `mode: repo` if missing.
 - Weave starts the current local session with the folder kind set to `app` by default.
 - Weave does not run `git init`.
 - Weave does not move files.
 - `.weave/architecture-considerations.md` is user-owned architecture guidance. Weave creates it once and never overwrites it.
+- `.weave/coding-guidelines.md` is the team's coding guidelines for code reviews. Only `weave init` and `weave review guidelines init` write it, only when absent; it is never overwritten.
 
 ### Workspace Mode In The Current Empty Directory
 
@@ -93,7 +95,7 @@ What happens:
 
 - The current directory becomes the workspace.
 - Weave initializes git in the current directory.
-- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, and `.weave/workspace.yml`.
+- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, `.weave/coding-guidelines.md` (starter, shared by every repo), and `.weave/workspace.yml`.
 - `.weave/workspace.yml` has `mode: workspace`.
 - The workspace has no registered repos yet.
 - Weave starts the current local session with `kind: workspace`.
@@ -115,7 +117,7 @@ What happens:
 - Weave creates the target workspace directory if it does not already exist.
 - Weave refuses unsafe existing target paths instead of overwriting user data.
 - Weave initializes git in the workspace directory.
-- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, and `.weave/workspace.yml`.
+- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, `.weave/coding-guidelines.md` (starter, shared by every repo), and `.weave/workspace.yml`.
 - Weave starts the current local session with `kind: workspace`.
 
 ### Workspace Mode From Inside A Git Repo
@@ -139,6 +141,7 @@ What happens:
 - Weave preserves dirty, staged, deleted, and untracked files because it does not run a clean-worktree guard.
 - Weave adds the adopted repo directory to the workspace `.gitignore`.
 - Weave registers the adopted repo in `.weave/workspace.yml`.
+- Weave writes the starter shared `.weave/coding-guidelines.md` at the workspace root; the adopted repo gets no repo-specific guidelines file.
 - Weave starts the current local session with `kind: workspace`.
 
 After this command, the user should open the workspace path in their editor.
@@ -443,6 +446,33 @@ weave adr check [--base <ref>] [--json]
 weave task prepare [--json]
 ```
 
+`weave review` holds the mechanical steps of code review for the active change. The `weave-review` skill drives it; see [code-reviews](../../../change-workflow/features/code-reviews/behavior.md):
+
+```bash
+weave review status [--slice <id> | --change] [--repair] [--json]
+weave review snapshot --slice <id> --at start [--force] [--json]
+weave review snapshot --run <run> --at round-start --round <n> [--force] [--json]
+weave review package (--slice <id> | --change) [--partial] [--force] [--out <path>] [--json]
+weave review package --run <run> [--fix-round <n>] [--out <path>] [--json]
+weave review record --run <run> (--report - | --resolve <finding> --as <fixed|ruling|parked|dismissed> [--round <n>] [--agreed <bool> --reason <text> --cost <text>] [--by <person>] | --finalize | --failed) [--independent false] [--json]
+weave review gate --change [--json]
+weave review skip --reason <text> [--json]
+weave review unskip [--json]
+weave review prune [--change <id>] [--json]
+weave review guidelines init [--repo <id>] [--json]
+```
+
+- `status` reports whether review is active (`active`, `inactive_cause`, `skill_paths`, `settings`) and each slice's stored and effective review state, out-of-date reasons, and counts. It writes nothing except first-contact adoption; `--repair` rebuilds slice `review:` blocks from `review/*.findings.json`.
+- `snapshot` records review boundaries under `refs/weave/reviews/` without touching HEAD, the branch, the index, or the stash.
+- `package` writes a review package under `.weave/tmp/reviews/` (git-ignored). Errors: `review_disabled` (workspace off, unless `--force`), `change_review_skipped`, `no_slices`, `slice_not_found`, `slice_not_ready` (unless `--partial`), `gate_failed` (`--change`, unless `--partial`), `round_not_started`, `round_limit`, `run_not_resumable`.
+- `record` validates and stores reviewer reports and resolutions. It exits 4 on `report_invalid` (nothing written) and 5 on `plan_finding_requires_person`; these exit codes are used by no other command.
+- `gate --change` exits 0 whether or not the final review may start; `pass` and `blocking` carry the answer.
+- `skip` needs `--reason` (`missing_reason`). `prune` and `guidelines init` need no active change.
+
+`weave slice rollup [--slice <id>] [--all] [--check] [--json]` derives slice status and the dependency graph. Its JSON includes `ready_for_review` per slice and `ready_slices`; `--check` writes nothing and exits 1 when derived state is stale. See [task-slices](../../../change-workflow/features/task-slices/behavior.md).
+
+Code review switches live in `.weave/workspace.yml` under `review:` (`enabled`, default true; `slice_rounds`, default 2; `models.<agent>.<cheap|mid|most_capable>`). Writers of `workspace.yml` such as `weave add` keep a `review:` key they did not set.
+
 `weave task prepare` is branch-readiness-only. In repo mode, it prepares the active repo root for `status.yml.branch`. In workspace mode, it prepares every registered workspace repo for `status.yml.branch`. It records readiness in `status.yml.execution.repos`. It does not inspect task artifacts, implement, verify, mark tasks done, commit, push, open PRs, stash, discard changes, or create remote branches.
 
 ### Examples
@@ -646,7 +676,8 @@ Expected outcome: Weave recognizes that `billing` is registered but missing loca
 ## Source Anchors
 
 - `src/commands/init.ts`: defines `weave init` and its options (`--mode`, `--workspace-name`, `--workspace-path`, `--id`, `--kind`, `--yes`).
-- `src/lib/init-workspace.ts`: implements repo mode, workspace mode, current-repo adoption, workspace metadata, git initialization, and session updates. Uses `registerRepoIntoWorkspace` for adopted-repo registration.
+- `src/lib/init-workspace.ts`: implements repo mode, workspace mode, current-repo adoption, workspace metadata, git initialization, and session updates. Uses `registerRepoIntoWorkspace` for adopted-repo registration. `seedGuidelines` writes the starter `.weave/coding-guidelines.md` (init only; not part of `ensureWeaveScaffold`).
+- `src/commands/review.ts` and `src/commands/review/*.ts`: the `weave review` command group; `src/lib/review/guidelines.ts`: guideline paths and starter text.
 - `src/commands/add.ts`: defines `weave add` and its options (`--id`, `--kind`).
 - `src/lib/add-folder.ts`: mode-aware add. Repo mode writes `session.folders`; workspace mode dispatches on URL vs path-inside vs path-outside and writes `workspace.yml.repos`.
 - `src/lib/workspace-mode.ts`: `findWorkspaceMode(cwd)` walks up looking for `.weave/workspace.yml` and reads `mode`. Shared by `weave add` and `weave workspace`.
@@ -667,3 +698,4 @@ Expected outcome: Weave recognizes that `billing` is registered but missing loca
 - 2026-11-09 (change `261107-4oq6-flag-stale-change-folders-in-weave`): `weave change list` gained `--all`, `--fetch`, per-change states, and a hidden background `weave change refresh`.
 - 2026-07-21 (change `260721-6d48-fix-init`): Cloned Weave workspaces now work without `weave init`. `weave init` is a safe no-op when `.weave/workspace.yml` already exists up the tree (no re-scaffold, no repo move, no session write). `weave add` in repo mode lazily creates a session containing only the target folder when no session exists. Repo-mode `weave workspace` with no session derives the workspace-root folder without writing. The `no_session` JSON status is renamed to `not_initialized` and is emitted only in the genuine uninitialized case.
 - 2026-11-10 (change `261109-479a-open-worktree-when-created`): `weave change new` and `switch` gained `--skill`, `--context`, `--open`, and `--no-open`; added `weave change open` and `weave settings open`.
+- 2026-11-10 (change `261110-g2wn-code-reviewers`): added the `weave review` command group and the workspace `review:` settings; `weave init` seeds the starter `.weave/coding-guidelines.md`; `weave slice rollup --json` reports `ready_for_review` and `ready_slices` and `--check` no longer writes.

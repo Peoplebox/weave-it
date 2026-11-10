@@ -1,0 +1,112 @@
+version: 1
+id: 261110-g2wn-code-reviewers
+slug: code-reviewers
+title: Code reviewers
+type: feat
+stage: slices
+branch: change/261110-g2wn-code-reviewers
+auto_advance:
+  questions_to_research: true
+  findings_to_questions: false
+  exploration_to_prd: true
+created_at: 2026-11-09T21:52:06.174Z
+updated_at: 2026-11-10T09:12:26.531Z
+checkout:
+  mode: worktree
+  repos:
+    root:
+      path: .
+      base: origin/main
+      base_commit: a7b09b85624276e10c4156ff609fd0640ad48ac5
+next_step:
+  text: "use the weave-questions skill for change 261110-g2wn-code-reviewers: Add
+    a weave-review step where independent sub-agent reviewers check a change's
+    diff against its PRD, architecture, decisions, and knowledge before the PR,
+    as described in ROADMAP.md"
+  stage: exploration
+artifacts:
+  exploration:
+    sources:
+      - discussion
+    updated_at: 2026-11-09T22:43:38.967Z
+  prd:
+    sources:
+      - exploration
+      - sessions
+    updated_at: 2026-11-09T22:46:31.537Z
+  architecture:
+    sources:
+      - prd
+      - codebase
+      - discussion
+    updated_at: 2026-11-09T23:23:47.786Z
+  slices:
+    sources:
+      - architecture
+    updated_at: 2026-11-09T23:44:38.246Z
+stress_tests:
+  exploration:
+    verdict: holds-with-changes
+    judged_at: 2026-11-09T22:43:39.133Z
+    artifact_updated_at: 2026-11-09T22:43:38.967Z
+    session: wiki/changes/261110-g2wn-code-reviewers/sessions/20261110-041318-zaqm-exploration-stress-test.md
+    reason: Direction stands; answers added triggers, ownership, plan-gap handling,
+      staleness, change-type coverage and rollout detail.
+  architecture:
+    verdict: holds-with-changes
+    judged_at: 2026-11-09T23:23:47.966Z
+    artifact_updated_at: 2026-11-09T23:23:47.786Z
+    session: wiki/changes/261110-g2wn-code-reviewers/sessions/20261110-045320-oo9d-architecture-stress-test.md
+    reason: Approach stands; added shared rules, exclusions, merge-base diff base,
+      locking, migration and cleanup, and tightened API and decisions.
+runs:
+  - id: prd-20261109T224339-7uvd
+    lane: prd
+    skill: weave-prd
+    agent: claude
+    trigger: auto-advance
+    transition: exploration_to_prd
+    upstream_updated_at: 2026-11-09T22:43:38.967Z
+    launch: handoff
+    started_at: 2026-11-09T22:43:39.524Z
+    finished_at: 2026-11-09T22:46:31.537Z
+    result: succeeded
+execution:
+  version: 1
+  branch: change/261110-g2wn-code-reviewers
+  repos:
+    root:
+      path: .
+      mode: repo
+      branch: change/261110-g2wn-code-reviewers
+      state: prepared
+      branch_status: already_active
+      prepared_head: a7b09b85624276e10c4156ff609fd0640ad48ac5
+      prepared_at: 2026-11-09T23:49:30.201Z
+      verified_at: 2026-11-10T06:01:38.306Z
+knowledge:
+  status: updated
+  updated_at: 2026-11-10T09:12:26.531Z
+  domains:
+    - change-workflow
+    - cli-commands
+    - cli-distribution
+  shared: []
+  files:
+    - wiki/knowledge/domains/change-workflow/features/code-reviews/behavior.md
+    - wiki/knowledge/domains/change-workflow/features/code-reviews/decision-tables.md
+    - wiki/knowledge/domains/change-workflow/index.md
+    - wiki/knowledge/domains/change-workflow/features/weave-execute/behavior.md
+    - wiki/knowledge/domains/change-workflow/features/task-slices/behavior.md
+    - wiki/knowledge/domains/change-workflow/features/change-folder-states/behavior.md
+    - wiki/knowledge/domains/change-workflow/features/recorded-decisions/behavior.md
+    - wiki/knowledge/domains/cli-commands/features/core-command-reference/behavior.md
+    - wiki/knowledge/domains/cli-distribution/index.md
+    - wiki/knowledge/domains/cli-distribution/features/notices/behavior.md
+    - wiki/knowledge/domains/cli-distribution/features/skill-resources/behavior.md
+    - wiki/knowledge/domains/cli-distribution/features/weave-status/behavior.md
+  delta: wiki/changes/261110-g2wn-code-reviewers/knowledge-delta.md
+  reason: Documented code reviews (weave-review skill and weave review CLI),
+    review-aware slice readiness and rollup, the execute hook, guidelines
+    seeding, review status lines, the skills_available notice, and the agent
+    update fix.

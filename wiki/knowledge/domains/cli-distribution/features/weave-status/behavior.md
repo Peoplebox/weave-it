@@ -20,7 +20,9 @@ Outside a Weave-managed folder (no `.weave/agents.yml`), `weave status` still re
 
 In a worktree-mode repo or workspace (from the main checkout, a change folder, or any subfolder), it also reads the attention snapshot `weave change list` leaves in `.git/weave/attention.json` and, when the total is above zero, prints one line before the notices: `<N> change(s) need attention (<n> landed, <m> folder missing). Run 'weave change list'.` Zero counts are left out. It never fetches or runs the landed check itself, so it can briefly lag behind the list. See [change-folder-states](../../../change-workflow/features/change-folder-states/behavior.md).
 
-The command is read-only; it never writes the cache, the manifest, the attention snapshot, or installed skill files.
+When the current folder resolves an active change that has code review data (or review is active for it), it prints one line before the notices: `Review (<change-id>): verdict: <verdict>` once the final review has a verdict (for example `verdict: ready with parked items (3)`), otherwise slice counts by review state and the final review state (for example `1 reviewed · 1 tasks done, not reviewed · final: not started`), or `skipped (<reason>)`. JSON gains `review` (`{change, active, inactive_cause, skipped, slices[], final}`), `null` outside a change or when there is nothing to show. It never adopts the change for review, and unreadable review data shows `unreadable` without failing the command. See [code-reviews](../../../change-workflow/features/code-reviews/behavior.md).
+
+The command is read-only; it never writes the cache, the manifest, the attention snapshot, review state, or installed skill files.
 
 ## Domain Model
 
@@ -44,6 +46,7 @@ JSON output shape (`weave status --json`):
   "changes_attention": {           // null without a snapshot or outside worktree mode
     "total": 2, "counts": { "landed": 1, "folder_missing": 1 }, "computed_at": "<iso>"
   },
+  "review": null,                  // the active change's code review summary, or null
   "notices": []                    // same shape as other Tier 1 commands
 }
 ```
@@ -67,17 +70,19 @@ Human output groups installed skills in a fixed-width table (`agent`, `skill`, `
 ## Source Anchors
 
 - Command: `src/commands/status.ts`
-- Action and table renderer: `src/lib/status.ts` (`buildStatus`, `collectSkillRows`, `renderStatusMessage`, `readPackageVersion`, `readChangesAttention`, `attentionLine`)
+- Action and table renderer: `src/lib/status.ts` (`buildStatus`, `collectSkillRows`, `renderStatusMessage`, `readPackageVersion`, `readChangesAttention`, `attentionLine`, `readActiveChangeReview`)
+- Review summary: `src/lib/review/summary.ts` (`changeStatusReview`, `shortChangeReviewLine`)
 - Attention snapshot: `src/lib/change-attention.ts`
 - Tier 1 wrapper: `src/lib/with-notices.ts`
 - User-paths: `src/lib/user-paths.ts` (`getNpmVersionCachePath`)
-- Tests: `tests/cli-status.test.ts`
+- Tests: `tests/cli-status.test.ts`, `tests/cli-change-status-review.test.ts`
 
 ## Change History
 
 - 2026-06-03 (change `260603-piln-npm-and-skill-versioning-and-updates`): `weave status` introduced as the fifth Tier 1 command and the canonical detailed view of package, skill, and notice state.
 - 2026-06-07 (change `260607-vuwa-architecture-skill-update`): npm latest refresh targets the scoped package metadata for `@weave-tools/weave-it` instead of the unscoped `weave-it` package name.
 - 2026-11-09 (change `261107-4oq6-flag-stale-change-folders-in-weave`): added the change attention line and `changes_attention`.
+- 2026-11-10 (change `261110-g2wn-code-reviewers`): added the active change's review line and `review`; the `skills_available` notice appears under `Notices`.
 
 ## Open Questions
 
