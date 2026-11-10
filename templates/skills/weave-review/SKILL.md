@@ -228,6 +228,10 @@ The person can run `weave-review slice <id>` or `weave-review change` at any tim
 
 If an on-demand slice review completes the last outstanding slice review, the gate passes and the final review starts, as in step 8 of **Slice Review**.
 
+# Checkpoint Commits
+
+While checkpoint commits are on, `weave review package` points end boundaries at the slice's build commit and turns each fix round (and the final fix batch) into its own commit. Its result's `boundary` says `commit` or `snapshot` per repo, with the reason for a snapshot, and `checkpoints[]` lists fix commits. Report a fix commit's files, or its failure and reason; a failed commit never stops the review. Recording `--finalize`, `--failed`, or a plan problem commits the review records. Never run `git commit` yourself.
+
 # Final Response
 
 Keep it short:
@@ -268,6 +272,13 @@ Notice handling:
   `The installed \`<skill-name>\` skill has local edits, so its behavior may differ from the bundled template. Run \`weave status\` or \`weave agent diff\` if you want to inspect the difference.`
 - `skills_modified`: if the user asks to update skills and installed skills have local edits, say:
   `Some installed skills have local edits. \`weave agent update\` may skip or protect them; run \`weave status\` or \`weave agent diff\` before updating.`
+
+Checkpoint commits (`checkpoint` or `checkpoints[]` in a result): say when one
+failed, or was skipped for `wrong_branch`, `detached_head`, or
+`operation_in_progress`, with its `reason` and `detail` (the step was still
+recorded; never retry or block on it). List a build or fix commit's files. On
+`notice: commits_enabled`, say once that Weave now commits each recorded stage
+and finished slice, and `weave settings commits off` turns it off for you.
 
 Do not say `Notices: ...`, `The command returned notices`, raw
 `notices[].message`, full notice JSON, or full skill lists unless the user

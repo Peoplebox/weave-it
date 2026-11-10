@@ -211,6 +211,7 @@ Auto-advance recommendation (from `weave advance --dry-run --json` and `weave ch
 
 - A `running` run for the lane you would recommend -> say that phase is already running (run id, skill, started time, and where: a sub-agent of the session that handed it off for a `handoff` run, its `where` for a terminal session, or `weave change run log <run-id> --follow` for a background one) and recommend waiting for it; never recommend starting it again.
 - The dry run fires (`"fired": true`) -> keep the recommended skill, and say that auto-advance is on for that transition, so `weave advance` will start it in a fresh session; the user can also run it themselves.
+- The latest run has `checkpoint.status: failed` -> say its stage was recorded but Weave could not commit it (`checkpoint.reason`); the next recorded step's catch-up commit saves it, or the person commits by hand.
 - The latest run for the lane is `incomplete` or `failed` -> mention it and recommend running the skill in a fresh session; for `failed`, `weave advance --retry-failed` also works.
 - The recommended skill is `weave-explore`, `weave-architect`, `weave-stress-test`, `weave-prd` for `feat`, or `weave-slices` -> say auto-advance never starts it because it needs the user's decisions.
 - Flags that are off -> mention them only when the user asks how to automate the next step: `weave change auto-advance <transition> on`.
@@ -291,6 +292,13 @@ Notice handling:
   `The installed \`<skill-name>\` skill has local edits, so its behavior may differ from the bundled template. Run \`weave status\` or \`weave agent diff\` if you want to inspect the difference.`
 - `skills_modified`: if the user asks to update skills and installed skills have local edits, say:
   `Some installed skills have local edits. \`weave agent update\` may skip or protect them; run \`weave status\` or \`weave agent diff\` before updating.`
+
+Checkpoint commits (`checkpoint` or `checkpoints[]` in a result): say when one
+failed, or was skipped for `wrong_branch`, `detached_head`, or
+`operation_in_progress`, with its `reason` and `detail` (the step was still
+recorded; never retry or block on it). List a build or fix commit's files. On
+`notice: commits_enabled`, say once that Weave now commits each recorded stage
+and finished slice, and `weave settings commits off` turns it off for you.
 
 Do not say `Notices: ...`, `The command returned notices`, raw
 `notices[].message`, full notice JSON, or full skill lists unless the user

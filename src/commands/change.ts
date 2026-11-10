@@ -1,4 +1,5 @@
 import { Command, InvalidArgumentError } from "commander";
+import { readFile } from "node:fs/promises";
 import {
   ChangeCommandError,
   changeStages,
@@ -15,6 +16,7 @@ import {
   type ChangeOperationResult,
   type ChangeType,
   progressChange,
+  setChangeCommitsSkipped,
   type ProgressChangeResult,
   knowledgeChange,
   type KnowledgeChangeResult,
@@ -111,7 +113,12 @@ interface ChangeStatusOptions {
   json?: boolean;
 }
 
-interface ChangeProgressOptions extends ChangeStatusOptions {
+interface CheckpointFlags {
+  summary?: string;
+  commitMessage?: string;
+}
+
+interface ChangeProgressOptions extends ChangeStatusOptions, CheckpointFlags {
   source?: string[];
   // Commander merges the negatable `--no-invalidate` and the value `--invalidate <lanes>`
   // onto this single attribute: `true` by default, `false` for `--no-invalidate`, or the
@@ -119,11 +126,11 @@ interface ChangeProgressOptions extends ChangeStatusOptions {
   invalidate?: string | boolean;
 }
 
-interface ChangeClearStaleOptions extends ChangeStatusOptions {
+interface ChangeClearStaleOptions extends ChangeStatusOptions, CheckpointFlags {
   reason?: string;
 }
 
-interface ChangeKnowledgeOptions extends ChangeStatusOptions {
+interface ChangeKnowledgeOptions extends ChangeStatusOptions, CheckpointFlags {
   domain?: string[];
   shared?: string[];
   file?: string[];
@@ -144,7 +151,7 @@ interface ChangeRunFinishOptions extends ChangeStatusOptions {
   session?: string;
 }
 
-interface ChangeVerdictOptions extends ChangeStatusOptions {
+interface ChangeVerdictOptions extends ChangeStatusOptions, CheckpointFlags {
   reason?: string;
   session?: string;
 }
@@ -287,6 +294,8 @@ export function changeCommand(): Command {
       "--invalidate <lanes>",
       "mark only this comma-separated subset of dependent lanes stale (e.g. issues,prd)",
     )
+    .option("--summary <text>", "one-line gist for the checkpoint commit subject")
+    .option("--commit-message <file>", "full checkpoint commit message from a file, or - for stdin")
     .option("--json", "print machine-readable JSON")
     .action(async (stage: ChangeStage, options: ChangeProgressOptions) => {
       await runAction(options.json ?? false, async () => {
@@ -294,6 +303,7 @@ export function changeCommand(): Command {
         const result = await progressChange({
           cwd: process.cwd(),
           stage,
+          ...(await checkpointMessageOptions(options)),
           sources: options.source,
           noInvalidate: invalidate === false,
           invalidateOnly: typeof invalidate === "string" ? parseInvalidateList(invalidate) : undefined,
@@ -307,12 +317,15 @@ export function changeCommand(): Command {
     .description("Explicitly clear a stale lane flag after content-sync verification.")
     .argument("<lane>", "lane: questions, research, exploration, prd, findings, architecture, or slices", parseChangeStage)
     .option("--reason <reason>", "one-sentence verification rationale recorded in stale_history")
+    .option("--summary <text>", "one-line gist for the checkpoint commit subject")
+    .option("--commit-message <file>", "full checkpoint commit message from a file, or - for stdin")
     .option("--json", "print machine-readable JSON")
     .action(async (lane: ChangeStage, options: ChangeClearStaleOptions) => {
       await runAction(options.json ?? false, async () => {
         const result = await clearChangeStaleness({
           cwd: process.cwd(),
           lane,
+          ...(await checkpointMessageOptions(options)),
           reason: options.reason,
         });
         writeResult(result, options.json ?? false);
@@ -326,17 +339,43 @@ export function changeCommand(): Command {
     .argument("<verdict>", `verdict: ${stressTestVerdicts.join(", ")}`, parseStressTestVerdict)
     .option("--reason <reason>", "why this verdict was given (required for waived)")
     .option("--session <path>", "stress test session note that holds the questions and answers")
+    .option("--summary <text>", "one-line gist for the checkpoint commit subject")
+    .option("--commit-message <file>", "full checkpoint commit message from a file, or - for stdin")
     .option("--json", "print machine-readable JSON")
     .action(async (lane: StressTestLane, verdict: StressTestVerdict, options: ChangeVerdictOptions) => {
       await runAction(options.json ?? false, async () => {
         const result = await verdictChange({
           cwd: process.cwd(),
           lane,
+          ...(await checkpointMessageOptions(options)),
           verdict,
           reason: options.reason,
           session: options.session,
         });
         writeResult(result, options.json ?? false);
+      });
+    });
+
+  command
+    .command("skip-commits")
+    .description("Stop Weave's checkpoint commits for the active change.")
+    .requiredOption("--reason <text>", "why this change is committed by hand")
+    .option("--json", "print machine-readable JSON")
+    .action(async (options: { reason: string; json?: boolean }) => {
+      await runAction(options.json ?? false, async () => {
+        const result = await setChangeCommitsSkipped({ cwd: process.cwd(), skip: true, reason: options.reason });
+        process.stdout.write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${result.message}\n`);
+      });
+    });
+
+  command
+    .command("unskip-commits")
+    .description("Resume Weave's checkpoint commits for the active change.")
+    .option("--json", "print machine-readable JSON")
+    .action(async (options: { json?: boolean }) => {
+      await runAction(options.json ?? false, async () => {
+        const result = await setChangeCommitsSkipped({ cwd: process.cwd(), skip: false });
+        process.stdout.write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${result.message}\n`);
       });
     });
 
@@ -447,6 +486,8 @@ export function changeCommand(): Command {
     .option("--delta <delta>", "change-local knowledge delta file")
     .option("--reason <reason>", "reason for the knowledge status")
     .option("--invalidated-by <source>", "source that invalidated knowledge freshness")
+    .option("--summary <text>", "one-line gist for the checkpoint commit subject")
+    .option("--commit-message <file>", "full checkpoint commit message from a file, or - for stdin")
     .option("--json", "print machine-readable JSON")
     .action(async (status: KnowledgeStatus, options: ChangeKnowledgeOptions) => {
       await runAction(options.json ?? false, async () => {
@@ -459,6 +500,7 @@ export function changeCommand(): Command {
           delta: options.delta,
           reason: options.reason,
           invalidatedBy: options.invalidatedBy,
+          ...(await checkpointMessageOptions(options)),
         });
         writeResult(result, options.json ?? false);
       });
@@ -847,4 +889,20 @@ function errorResult(error: unknown): { status: "error"; code: string; message: 
     code: "unknown_error",
     message: error instanceof Error ? error.message : String(error),
   };
+}
+
+// `--summary` and `--commit-message <file|->` for commands that record change status.
+export async function checkpointMessageOptions(options: CheckpointFlags): Promise<{ summary?: string; commitMessage?: string }> {
+  const result: { summary?: string; commitMessage?: string } = {};
+  if (options.summary?.trim()) result.summary = options.summary.trim();
+  if (options.commitMessage) {
+    result.commitMessage = options.commitMessage === "-" ? await readStdin() : await readFile(options.commitMessage, "utf8");
+  }
+  return result;
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  return Buffer.concat(chunks).toString("utf8");
 }

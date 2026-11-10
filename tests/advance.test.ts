@@ -532,6 +532,8 @@ describe("visible launches", () => {
     expect(opened[0]).toMatchObject({ cwd: fixture.cwd, title: "weave-research aa01" });
     expect(opened[0].command).toContain(`agent 'use the weave-research skill for change ${changeId}'`);
     expect(opened[0].command).toContain(`; weave advance --finish-run ${run.id}`);
+    // Sessions Weave starts carry the unattended marker (decision 261111-7orw).
+    expect(opened[0].command.startsWith("WEAVE_UNATTENDED=1 ")).toBe(true);
     expect(result.message).toContain("Started weave-research in a test tab");
   });
 

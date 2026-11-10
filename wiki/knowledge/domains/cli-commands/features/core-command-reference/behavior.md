@@ -433,6 +433,14 @@ weave settings open [--in <place> [--agent <agent>] | --clear] [--project] [--js
 
 See [opening-changes](../../../change-workflow/features/opening-changes/behavior.md).
 
+Checkpoint commits (see [checkpoint-commits](../../../change-workflow/features/checkpoint-commits/behavior.md)): `weave change progress|verdict|clear-stale|knowledge` and `weave review record` commit what they record and accept `--summary <text>` (change commands also `--commit-message <file|->`); `weave slice rollup` makes build commits; results carry `checkpoint` or `checkpoints[]`. Switches:
+
+```bash
+weave settings commits on|off [--project] [--json]
+weave change skip-commits --reason <text> [--json]
+weave change unskip-commits [--json]
+```
+
 `weave adr` records long-lived engineering decisions. See [recorded-decisions](../../../change-workflow/features/recorded-decisions/behavior.md):
 
 ```bash
@@ -701,6 +709,7 @@ Expected outcome: Weave recognizes that `billing` is registered but missing loca
 - 2026-06-08 (change `260608-78sp-fix-weave-add`): Workspace `weave add` now treats registered-but-missing repo paths as local materialization targets for both git URLs and local paths instead of duplicate adds.
 - 2026-11-09 (change `261107-4oq6-flag-stale-change-folders-in-weave`): `weave change list` gained `--all`, `--fetch`, per-change states, and a hidden background `weave change refresh`.
 - 2026-07-21 (change `260721-6d48-fix-init`): Cloned Weave workspaces now work without `weave init`. `weave init` is a safe no-op when `.weave/workspace.yml` already exists up the tree (no re-scaffold, no repo move, no session write). `weave add` in repo mode lazily creates a session containing only the target folder when no session exists. Repo-mode `weave workspace` with no session derives the workspace-root folder without writing. The `no_session` JSON status is renamed to `not_initialized` and is emitted only in the genuine uninitialized case.
+- 2026-11-11 (change `261111-kdv6-commit-checkpoints`): added checkpoint commits to the recording commands and `weave slice rollup`, `--summary`/`--commit-message`, `weave settings commits`, and `weave change skip-commits|unskip-commits`.
 - 2026-11-10 (change `261109-479a-open-worktree-when-created`): `weave change new` and `switch` gained `--skill`, `--context`, `--open`, and `--no-open`; added `weave change open` and `weave settings open`.
 - 2026-11-10 (change `261110-g2wn-code-reviewers`): added the `weave review` command group and the workspace `review:` settings; `weave init` seeds the starter `.weave/coding-guidelines.md`; `weave slice rollup --json` reports `ready_for_review` and `ready_slices` and `--check` no longer writes.
 - 2026-11-10 (direct edit on main, decision `261110-gwl5`): `weave init` no longer seeds `.weave/coding-guidelines.md` and prints a hint for the `weave-coding-guidelines` skill instead; `weave add` prints the hint for a repo with no guidelines file; added `weave review guidelines status`.

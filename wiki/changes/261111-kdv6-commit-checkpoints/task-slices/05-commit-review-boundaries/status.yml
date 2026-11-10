@@ -1,0 +1,15 @@
+version: 1
+id: 05-commit-review-boundaries
+title: Review boundaries and fix commits
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 04-build-commits
+task_summary:
+  total: 3
+  done: 3
+  blocked: 0
+created_at: 2026-11-11T03:30:00.000Z
+updated_at: 2026-11-10T22:12:27.768Z

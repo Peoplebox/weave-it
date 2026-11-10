@@ -12,6 +12,7 @@ import { gatherFacts, resolveMainRoot, type GatheredChange, type RemoteFacts } f
 import { remoteFacts, type RefreshRecord } from "./change-refresh.js";
 import type { ChangeStatusReviewView } from "./review/summary.js";
 import { attentionCounts, deriveState, nextLine, stateLine, type ChangeView } from "./change-states.js";
+import { planningCheckpoint, renderCheckpointLine, type CheckpointOutcome, type PlanningMoment } from "./checkpoints.js";
 import { pathExists } from "./files.js";
 import { findGitRoot, listGitWorktrees } from "./git.js";
 import { slugify, titleFromSlug } from "./ids.js";
@@ -376,7 +377,15 @@ export interface StatusChangeOptions {
   sessionPath?: string;
 }
 
-export interface ProgressChangeOptions {
+export interface CheckpointMessageOptions {
+  // One-line gist for the checkpoint commit subject (decision 261111-htho).
+  summary?: string;
+  // A full commit message, used verbatim; Weave appends its trailers.
+  commitMessage?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+export interface ProgressChangeOptions extends CheckpointMessageOptions {
   cwd: string;
   stage: ChangeStage;
   sources?: readonly string[];
@@ -386,7 +395,7 @@ export interface ProgressChangeOptions {
   invalidateOnly?: readonly ChangeStage[];
 }
 
-export interface KnowledgeChangeOptions {
+export interface KnowledgeChangeOptions extends CheckpointMessageOptions {
   cwd: string;
   status: KnowledgeStatus;
   domains?: readonly string[];
@@ -410,6 +419,7 @@ export interface ProgressChangeResult {
   progressed: ChangeStage;
   sources: ArtifactSourceId[];
   note?: string;
+  checkpoint?: CheckpointOutcome;
   message: string;
 }
 
@@ -422,6 +432,7 @@ export interface KnowledgeChangeResult {
   };
   change: ChangeSummary;
   knowledge: KnowledgeMetadata;
+  checkpoint?: CheckpointOutcome;
   message: string;
 }
 
@@ -1202,6 +1213,16 @@ export async function progressChange(options: ProgressChangeOptions): Promise<Pr
     active: true,
   };
 
+  const checkpoint = await recordPlanningCheckpoint(
+    context,
+    { kind: "progress", lane: options.stage, staleLanes: propagationTargets },
+    options,
+  );
+  const runsFinished = existing.runs.filter((run) => run.lane === options.stage && run.result === "running").map((run) => run.id);
+  if (checkpoint.status === "failed" && runsFinished.length > 0) {
+    await recordRunCheckpointFailure(statusPath, runsFinished, checkpoint);
+  }
+
   return {
     status: "ok",
     target,
@@ -1209,11 +1230,12 @@ export async function progressChange(options: ProgressChangeOptions): Promise<Pr
     progressed: options.stage,
     sources: sourceResolution.sources,
     note: sourceResolution.note,
-    message: formatProgressMessage(target, change, options.stage, sourceResolution.note),
+    checkpoint,
+    message: withCheckpointLine(formatProgressMessage(target, change, options.stage, sourceResolution.note), checkpoint),
   };
 }
 
-export interface ClearChangeStalenessOptions {
+export interface ClearChangeStalenessOptions extends CheckpointMessageOptions {
   cwd: string;
   lane: ChangeStage;
   reason?: string;
@@ -1231,6 +1253,7 @@ export interface ClearChangeStalenessResult {
   change: ChangeSummary;
   cleared: ChangeStage;
   history_entry: StaleHistoryEntry;
+  checkpoint?: CheckpointOutcome;
   message: string;
 }
 
@@ -1286,17 +1309,23 @@ export async function clearChangeStaleness(
     active: true,
   };
 
+  const checkpoint = await recordPlanningCheckpoint(context, { kind: "clear-stale", lane: options.lane }, options);
+
   return {
     status: "ok",
     target,
     change,
     cleared: options.lane,
     history_entry: historyEntry,
-    message: `Cleared stale flag for ${options.lane} (was invalidated by ${currentStale.invalidated_by}).${historyEntry.reason ? ` Reason: ${historyEntry.reason}` : ""}`,
+    checkpoint,
+    message: withCheckpointLine(
+      `Cleared stale flag for ${options.lane} (was invalidated by ${currentStale.invalidated_by}).${historyEntry.reason ? ` Reason: ${historyEntry.reason}` : ""}`,
+      checkpoint,
+    ),
   };
 }
 
-export interface VerdictChangeOptions {
+export interface VerdictChangeOptions extends CheckpointMessageOptions {
   cwd: string;
   lane: StressTestLane;
   verdict: StressTestVerdict;
@@ -1312,6 +1341,7 @@ export interface VerdictChangeResult {
   change: ChangeSummary;
   lane: StressTestLane;
   stress_test: StressTestRecord;
+  checkpoint?: CheckpointOutcome;
   message: string;
 }
 
@@ -1355,13 +1385,20 @@ export async function verdictChange(options: VerdictChangeOptions): Promise<Verd
     throw new ChangeCommandError("invalid_stress_test", "Stress test verdict could not be recorded");
   }
 
+  const checkpoint = await recordPlanningCheckpoint(
+    context,
+    { kind: "verdict", lane: options.lane, verdict: options.verdict, ...(options.session ? { session: options.session } : {}) },
+    options,
+  );
+
   return {
     status: "ok",
     target,
     change,
     lane: options.lane,
     stress_test: stressTest,
-    message: `Recorded ${options.lane} stress test verdict: ${options.verdict}${reason ? ` (${reason})` : ""}.`,
+    checkpoint,
+    message: withCheckpointLine(`Recorded ${options.lane} stress test verdict: ${options.verdict}${reason ? ` (${reason})` : ""}.`, checkpoint),
   };
 }
 
@@ -1659,6 +1696,8 @@ export async function knowledgeChange(options: KnowledgeChangeOptions): Promise<
     active: true,
   };
 
+  const checkpoint = await recordPlanningCheckpoint(context, { kind: "knowledge", status: options.status }, options);
+
   if (!change.knowledge) {
     throw new ChangeCommandError("invalid_knowledge_status", "Knowledge status could not be recorded");
   }
@@ -1668,7 +1707,8 @@ export async function knowledgeChange(options: KnowledgeChangeOptions): Promise<
     target,
     change,
     knowledge: change.knowledge,
-    message: formatKnowledgeMessage(target, change),
+    checkpoint,
+    message: withCheckpointLine(formatKnowledgeMessage(target, change), checkpoint),
   };
 }
 
@@ -2902,4 +2942,80 @@ export async function locateChange(options: { cwd: string; change?: string; sess
     folderExists: folder ? await pathExists(folder) : false,
     mainRoot: await mainCheckoutPath(target.path),
   };
+}
+
+// Commits what a status write recorded (decision 261111-htho). Never throws; the outcome goes into
+// the command result.
+export async function recordPlanningCheckpoint(
+  context: ActiveChangeContext,
+  moment: PlanningMoment,
+  options: CheckpointMessageOptions,
+): Promise<CheckpointOutcome> {
+  return planningCheckpoint({
+    weaveRoot: context.target.path,
+    changeId: context.change.id,
+    changePath: context.change.changePath,
+    branch: context.change.branch,
+    title: context.change.title,
+    moment,
+    ...(options.summary ? { summary: options.summary } : {}),
+    ...(options.commitMessage ? { message: options.commitMessage } : {}),
+    ...(options.env ? { env: options.env } : {}),
+  });
+}
+
+export function withCheckpointLine(message: string, checkpoint: CheckpointOutcome | undefined): string {
+  const line = renderCheckpointLine(checkpoint);
+  return line ? `${message}\n${line}` : message;
+}
+
+export interface SkipCommitsResult {
+  status: "ok";
+  change: string;
+  skipped?: { reason: string; at: string };
+  message: string;
+}
+
+// `weave change skip-commits --reason` / `unskip-commits`: the per-change switch
+// (`commits.skipped` in the change's status.yml; decision 261111-htho).
+export async function setChangeCommitsSkipped(options: {
+  cwd: string;
+  skip: boolean;
+  reason?: string;
+  now?: Date;
+  sessionPath?: string;
+}): Promise<SkipCommitsResult> {
+  const context = await activeChangeContext(options);
+  const statusPath = path.join(context.change.changePath, "status.yml");
+  const raw = await readStatusFile(statusPath);
+  const commits = isRecord(raw.commits) ? { ...raw.commits } : {};
+  if (options.skip) {
+    const reason = options.reason?.trim();
+    if (!reason) throw new ChangeCommandError("missing_reason", "Pass --reason saying why this change skips checkpoint commits.");
+    const skipped = { reason, at: (options.now ?? new Date()).toISOString() };
+    await writeFile(statusPath, YAML.stringify({ ...raw, commits: { ...commits, skipped } }));
+    return { status: "ok", change: context.change.id, skipped, message: `Checkpoint commits skipped for ${context.change.id} (${reason}).` };
+  }
+  delete (commits as Record<string, unknown>).skipped;
+  const next: Record<string, unknown> = { ...raw };
+  if (Object.keys(commits).length > 0) next.commits = commits;
+  else delete next.commits;
+  await writeFile(statusPath, YAML.stringify(next));
+  return { status: "ok", change: context.change.id, message: `Checkpoint commits resume for ${context.change.id}.` };
+}
+
+// A phase whose planning commit failed keeps that on its run, so the next person sees it.
+async function recordRunCheckpointFailure(statusPath: string, runIds: string[], checkpoint: CheckpointOutcome): Promise<void> {
+  try {
+    const raw = await readStatusFile(statusPath);
+    if (!Array.isArray(raw.runs)) return;
+    const runs = raw.runs.map((run: unknown) =>
+      isRecord(run) && typeof run.id === "string" && runIds.includes(run.id)
+        ? { ...run, checkpoint: { status: checkpoint.status, reason: checkpoint.reason, ...(checkpoint.detail ? { detail: checkpoint.detail } : {}) } }
+        : run,
+    );
+    await writeFile(statusPath, YAML.stringify({ ...raw, runs }));
+  } catch {
+    // Best-effort.
+  }
 }

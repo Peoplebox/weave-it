@@ -7,7 +7,13 @@
 import type { Command } from "commander";
 import { ChangeCommandError } from "../../lib/changes.js";
 import { buildChangePackage, buildSlicePackage, type ChangePackageResult, type PackageResult } from "../../lib/review/package.js";
+import { renderCheckpointLine } from "../../lib/checkpoints.js";
+import { boundaryReport, CommitBoundary, reviewBoundaryFor } from "../../lib/review/commit-boundary.js";
+import { resolveRun, runRepoCheckouts } from "../../lib/review/record.js";
 import { buildFixRoundPackage, resumeRun, type FixRoundPackageResult, type ResumeRunResult } from "../../lib/review/rounds.js";
+import type { ReviewBoundary } from "../../lib/review/boundary.js";
+import { resolveSlice } from "../../lib/review/state.js";
+import { changeRepoCheckouts, sliceRepoCheckouts } from "./snapshot.js";
 import { activeReviewContext, runAction, writeResult } from "./shared.js";
 
 interface ReviewPackageOptions {
@@ -46,31 +52,50 @@ export function registerReviewPackage(review: Command): void {
             writeResult(result, json, renderResume(result));
             return;
           }
-          const result = await buildFixRoundPackage(ctx, options.run, options.fixRound, options.out ? { out: options.out } : {});
-          writeResult(result, json, renderFixRoundPackageResult(result));
+          const target = await resolveRun(ctx, options.run);
+          const repos = await runRepoCheckouts(ctx, target);
+          const boundary = await reviewBoundaryFor(ctx, target.scope === "slice" ? { sliceId: target.slice.id, repos } : { change: true, repos });
+          const result = await buildFixRoundPackage(ctx, options.run, options.fixRound, options.out ? { out: options.out } : {}, boundary);
+          writeWithBoundary(result, json, renderFixRoundPackageResult(result), boundary, repos);
           return;
         }
         if (options.change) {
           if (options.slice !== undefined) {
             throw new ChangeCommandError("invalid_arguments", "Pass either --slice <id> or --change, not both.");
           }
-          const result = await buildChangePackage(await activeReviewContext(), {
-            ...(options.partial ? { partial: true } : {}),
-            ...(options.force ? { force: true } : {}),
-            ...(options.out ? { out: options.out } : {}),
-          });
-          writeResult(result, json, renderChangePackageResult(result));
+          const ctx = await activeReviewContext();
+          const repos = await changeRepoCheckouts(ctx);
+          const boundary = await reviewBoundaryFor(ctx, { change: true, repos });
+          const result = await buildChangePackage(
+            ctx,
+            {
+              ...(options.partial ? { partial: true } : {}),
+              ...(options.force ? { force: true } : {}),
+              ...(options.out ? { out: options.out } : {}),
+            },
+            boundary,
+          );
+          writeWithBoundary(result, json, renderChangePackageResult(result), boundary, repos);
           return;
         }
         if (options.slice === undefined) {
           throw new ChangeCommandError("invalid_arguments", "Pass --slice <id>, --change, or --run <run> [--fix-round <n>].");
         }
-        const result = await buildSlicePackage(await activeReviewContext(), options.slice, {
-          ...(options.partial ? { partial: true } : {}),
-          ...(options.force ? { force: true } : {}),
-          ...(options.out ? { out: options.out } : {}),
-        });
-        writeResult(result, json, renderReviewPackage(result));
+        const ctx = await activeReviewContext();
+        const slice = await resolveSlice(ctx, options.slice);
+        const repos = await sliceRepoCheckouts(ctx, slice);
+        const boundary = await reviewBoundaryFor(ctx, { sliceId: slice.id, repos });
+        const result = await buildSlicePackage(
+          ctx,
+          options.slice,
+          {
+            ...(options.partial ? { partial: true } : {}),
+            ...(options.force ? { force: true } : {}),
+            ...(options.out ? { out: options.out } : {}),
+          },
+          boundary,
+        );
+        writeWithBoundary(result, json, renderReviewPackage(result), boundary, repos);
       });
     });
 }
@@ -109,4 +134,25 @@ export function renderFixRoundPackageResult(result: FixRoundPackageResult): stri
 
 function renderResume(result: ResumeRunResult): string {
   return `${result.run_id}: resume at fix round ${result.resume_round} (${result.open.length} open code findings)`;
+}
+
+// Adds which kind of end boundary each repo got and any fix commits made (decision 261111-kx9x).
+function writeWithBoundary<T extends object>(
+  result: T,
+  json: boolean,
+  text: string,
+  boundary: ReviewBoundary,
+  repos: Array<{ id: string; path?: string }>,
+): void {
+  const report = boundaryReport(boundary, repos);
+  const checkpoints = boundary instanceof CommitBoundary ? boundary.checkpoints : [];
+  const lines = [text];
+  if (report) {
+    lines.push(`  boundary: ${Object.entries(report).map(([repo, entry]) => `${repo} ${entry.kind}${entry.reason ? ` (${entry.reason.replace(/_/g, " ")})` : ""}`).join(", ")}`);
+  }
+  for (const checkpoint of checkpoints) {
+    const line = renderCheckpointLine(checkpoint);
+    if (line) lines.push(line);
+  }
+  writeResult({ ...result, ...(report ? { boundary: report } : {}), ...(checkpoints.length > 0 ? { checkpoints } : {}) }, json, lines.join("\n"));
 }

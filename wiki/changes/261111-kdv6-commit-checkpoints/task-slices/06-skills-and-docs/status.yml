@@ -1,0 +1,17 @@
+version: 1
+id: 06-skills-and-docs
+title: Skills and docs describe and drive checkpoints
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 02-planning-triggers
+  - 03-commit-controls
+  - 05-commit-review-boundaries
+task_summary:
+  total: 3
+  done: 3
+  blocked: 0
+created_at: 2026-11-11T03:30:00.000Z
+updated_at: 2026-11-10T22:17:41.859Z

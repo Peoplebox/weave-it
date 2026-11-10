@@ -114,7 +114,7 @@ It does not rewrite unrelated task wording, unrelated sections, `QF#` entries, `
 `weave-execute` is local-only. It does not:
 
 - add `weave task execute`
-- commit
+- run `git commit` itself (Weave's `weave slice rollup` makes the slice's build commit and review packaging makes fix commits; see [checkpoint-commits](../checkpoint-commits/behavior.md))
 - push
 - open pull requests
 - create remote branches
@@ -137,6 +137,7 @@ It does not rewrite unrelated task wording, unrelated sections, `QF#` entries, `
 ## Change History
 
 - 2026-06-07 (change `260607-bbam-task-execution-workflow`): introduced `/weave-execute` as a bundled agent skill and opencode wrapper for local task execution, prepare delegation, dependency handling, HITL pauses, verification, and narrow `tasks.md` evidence updates.
+- 2026-11-11 (change `261111-kdv6-commit-checkpoints`): runs `weave slice rollup --all --json` before each slice's first task (retrying an earlier slice's build commit) and after its last, reports build commits from `checkpoints[]`, and names the checkpoint commits in its final summary instead of claiming it never commits.
 - 2026-06-09 (change `260609-rrsq-weave-slice`): dual-mode slice vs flat legacy execution; built-in branch prep; rollup episode boundaries; slice selector `/<slice-id> <task-id>`.
 - 2026-06-12 (change `260611-cuvh-slices-execution-default-afk`): slice-mode prepare now passes the selected slice's `status.yml.repos` to `weave task prepare --repo <id>`, so workspace repos outside the selected slice are not switched or blocked.
 - 2026-11-01 (branch `change/questions-research-skills`): checks recorded decisions before changing code, stops on a conflict, and reports decisions consulted and candidate ADRs.

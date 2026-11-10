@@ -1,0 +1,15 @@
+version: 1
+id: 02-planning-triggers
+title: Planning commits for verdicts, stale clears, knowledge, and review results
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 01-planning-checkpoint-core
+task_summary:
+  total: 3
+  done: 3
+  blocked: 0
+created_at: 2026-11-11T03:30:00.000Z
+updated_at: 2026-11-10T21:59:43.431Z

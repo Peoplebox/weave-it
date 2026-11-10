@@ -16,6 +16,10 @@ export interface OpenChoice {
   ask?: boolean;
 }
 
+export interface CommitsChoice {
+  enabled: boolean;
+}
+
 export interface OwnAgent {
   command: string;
   label?: string;
@@ -29,6 +33,11 @@ export interface UserSettings {
   };
   agents?: Record<string, OwnAgent>;
   locations?: Record<string, string>;
+  // Checkpoint commits (decision 261111-htho): a personal off switch, for every project or one.
+  commits?: {
+    default?: CommitsChoice;
+    projects?: Record<string, CommitsChoice>;
+  };
   // Anything else is kept as is on write.
   [key: string]: unknown;
 }

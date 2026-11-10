@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import { activeChangeContext, ChangeCommandError } from "../lib/changes.js";
+import { buildCheckpoints } from "../lib/build-checkpoints.js";
+import { renderCheckpointLine } from "../lib/checkpoints.js";
 import { rollupChange } from "../lib/sliceRollup.js";
 
 interface SliceRollupOptions {
@@ -30,7 +32,22 @@ export function sliceCommand(): Command {
           check: options.check ?? false,
         });
 
-        writeResult(result, options.json ?? false);
+        // A slice that finished building gets its build commit (decision 261111-htho).
+        const checkpoints = options.check
+          ? []
+          : await buildCheckpoints({
+              weaveRoot: current.target.path,
+              changeId: current.change.id,
+              changePath,
+              branch: current.change.branch,
+              title: current.change.title,
+              rollup: result,
+            }).catch(() => []);
+        const lines = checkpoints.map((checkpoint) => renderCheckpointLine(checkpoint)).filter((line): line is string => Boolean(line));
+        writeResult(
+          checkpoints.length > 0 ? { ...result, checkpoints, message: [result.message, ...lines].join("\n") } : result,
+          options.json ?? false,
+        );
         if (result.status === "check_failed") {
           process.exitCode = 1;
         }

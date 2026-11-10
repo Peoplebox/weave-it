@@ -128,7 +128,7 @@ A ruling records `agreed`, `reason`, `cost_if_wrong`, and a `basis`: the blob of
 
 ### Review packages and boundaries
 
-Boundaries are working-tree **snapshots** (decision `261110-wdfo`): parentless commit objects created from a temporary index (a copy of the real index, keeping its timestamps, then `git add -A`, so `.gitignore` is honoured and untracked files are included), stored under Weave-only refs. They never touch HEAD, the branch, the index, or the stash. They sit behind a `ReviewBoundary` interface so real commits can replace them later.
+End boundaries point at checkpoint commits while commits are on for a sliced change (decision `261111-kx9x`; see [checkpoint-commits](../checkpoint-commits/behavior.md)): the slice's build commit, or the fix commit each round-end and the final fix-end make first. Start boundaries and every fallback are working-tree **snapshots** (originally decision `261110-wdfo`, now superseded): parentless commit objects created from a temporary index (a copy of the real index, keeping its timestamps, then `git add -A`, so `.gitignore` is honoured and untracked files are included), stored under Weave-only refs. They never touch HEAD, the branch, the index, or the stash. They sit behind a `ReviewBoundary` interface so real commits can replace them later.
 
 ```text
 refs/weave/reviews/<change>/<slice>/start
@@ -283,10 +283,10 @@ Per change: `weave review skip --reason "<why>"` and `weave review unskip`.
 
 - 2026-11-10 (change `261110-g2wn-code-reviewers`): introduced slice and final code reviews, the `weave-review` skill and briefs, the `weave review` command group, snapshot boundaries, review records, out-of-date detection, rulings with reopen, the final-review gate and verdicts, coding guidelines files, workspace review settings, and per-change skip.
 - 2026-11-10 (direct edit on main): guidelines files can link to more guideline files; reviewer briefs follow the links and list the files they read under **Guidelines read**.
+- 2026-11-11 (change `261111-kdv6-commit-checkpoints`, decision `261111-kx9x`): end boundaries point at build and fix commits through `CommitBoundary` (snapshot fallback); fix rounds and the final fix batch are commits; packages and `review status --slice` report the boundary kind; `review record --finalize|--failed` and plan-problem stops make planning commits.
 - 2026-11-10 (direct edit on main, decision `261110-gwl5`): added the `weave-coding-guidelines` skill and `weave review guidelines status`; `weave init` no longer seeds the starter and `weave add` hints at the skill; reviewers skip **Open questions**.
 
 ## Open Questions
 
 - Choosing which agent reviews (cross-agent review) is deferred; `review.models` leaves room for it.
-- When checkpoint commits arrive, a commit-based boundary is expected to replace snapshots behind the same interface.
 - Snapshot cost on very large repos is unmeasured.

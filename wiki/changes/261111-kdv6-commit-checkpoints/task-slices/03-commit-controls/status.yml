@@ -1,0 +1,15 @@
+version: 1
+id: 03-commit-controls
+title: Switches, notice, and unattended marker
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 01-planning-checkpoint-core
+task_summary:
+  total: 4
+  done: 4
+  blocked: 0
+created_at: 2026-11-11T03:30:00.000Z
+updated_at: 2026-11-10T22:03:10.004Z

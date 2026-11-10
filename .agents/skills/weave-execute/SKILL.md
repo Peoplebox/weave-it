@@ -1,6 +1,6 @@
 ---
 name: weave-execute
-description: Implement selected tasks of the active Weave change locally. Resolves task dependencies, prepares branches, writes the code, runs verification, and records evidence in tasks.md, without committing, pushing, or opening PRs. Use when the user says implement, execute, build, or work on specific tasks (for example T1 to T3) or the next ready slice. Not for planning the work (use weave-slices).
+description: Implement selected tasks of the active Weave change locally. Resolves task dependencies, prepares branches, writes the code, runs verification, and records evidence in tasks.md. Weave commits each finished slice itself; the skill never pushes or opens PRs. Use when the user says implement, execute, build, or work on specific tasks (for example T1 to T3) or the next ready slice. Not for planning the work (use weave-slices).
 license: MIT
 compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
 metadata:
@@ -14,7 +14,7 @@ Use this skill when the user wants an agent to execute selected `T#` tasks in an
 
 Execution means: resolve the active change, read `tasks.md`, resolve the user's selector, expand dependencies from `Blocked by:`, run prepare for the final task set, implement each eligible task, run appropriate verification, update local task evidence, and summarize outcomes.
 
-Execution is local-only. It must not commit, push, open pull requests, create remote branches, stash, discard changes, force-checkout, publish external issue updates, or create a separate execution run-history artifact.
+Execution is local-only. It must not run `git commit` itself, push, open pull requests, create remote branches, stash, discard changes, force-checkout, publish external issue updates, or create a separate execution run-history artifact. Weave's own commands make checkpoint commits: `weave slice rollup` commits a slice when it is ready for review (its result's `checkpoints[]`), and review packaging commits fix rounds.
 
 # Silent Weave Command Output
 
@@ -42,6 +42,13 @@ Notice handling:
   `The installed \`<skill-name>\` skill has local edits, so its behavior may differ from the bundled template. Run \`weave status\` or \`weave agent diff\` if you want to inspect the difference.`
 - `skills_modified`: if the user asks to update skills and installed skills have local edits, say:
   `Some installed skills have local edits. \`weave agent update\` may skip or protect them; run \`weave status\` or \`weave agent diff\` before updating.`
+
+Checkpoint commits (`checkpoint` or `checkpoints[]` in a result): say when one
+failed, or was skipped for `wrong_branch`, `detached_head`, or
+`operation_in_progress`, with its `reason` and `detail` (the step was still
+recorded; never retry or block on it). List a build or fix commit's files. On
+`notice: commits_enabled`, say once that Weave now commits each recorded stage
+and finished slice, and `weave settings commits off` turns it off for you.
 
 Do not say `Notices: ...`, `The command returned notices`, raw
 `notices[].message`, full notice JSON, or full skill lists unless the user
@@ -208,7 +215,9 @@ Small tasks are where a deliberate decision is most easily undone by accident, b
 
 In slice mode, code review is part of finishing a slice. The `weave-review` skill does the reviewing; this skill only records where the slice started and hands over when it is done.
 
-Before the first task of a slice moves to `in_progress`, check whether review is active:
+Before the first task of a slice moves to `in_progress`, run `weave slice rollup --all --json`, whether or not review is active. It retries a build commit an earlier slice could not make. When its `checkpoints[]` shows a commit that `leftovers_from` names, or a failure, say so.
+
+Then check whether review is active:
 
 ```bash
 weave review status --slice <slice-id> --json
@@ -223,7 +232,7 @@ weave review status --slice <slice-id> --json
 
   It keeps an existing start snapshot. When the slice is already `in_progress` and has no `review.start_ref`, do not take one: its review then measures from the change base, so the work done before this run is still reviewed.
 
-After the slice's last task in this run, run `weave slice rollup --all --json`. When review is active and the slice's entry in `slices[]` has `ready_for_review: true`, hand over in this session, in the foreground: load the `weave-review` skill and run its slice review for `<id>`; if you cannot load it by name, read it from one of `skill_paths`.
+After the slice's last task in this run, run `weave slice rollup --all --json`. Report its build commit from `checkpoints[]`: the files committed, or the failure and its reason (the project's commit checks may reject it; nothing is blocked). When review is active and the slice's entry in `slices[]` has `ready_for_review: true`, hand over in this session, in the foreground: load the `weave-review` skill and run its slice review for `<id>`; if you cannot load it by name, read it from one of `skill_paths`.
 
 - Wait for the review, its fix rounds, and its rulings to finish before starting another slice. Never run a review in the background.
 - When the review stops for a plan problem, the slice is `waiting_on_person`. End this run there: do not start another slice, and tell the user what the review says they must decide.
@@ -294,4 +303,4 @@ Finish with a grouped outcome summary:
 - recorded decisions consulted, any conflicts, and any candidate ADRs. Run `weave adr check --json` and name every decision it reports as touched
 - next steps for anything unresolved
 
-Always state that `/weave-execute` did not commit, push, open a PR, create remote branches, stash, discard changes, or publish external issue updates.
+Always state that `/weave-execute` did not push, open a PR, create remote branches, stash, discard changes, or publish external issue updates, and name the checkpoint commits Weave made (or that commits are off).

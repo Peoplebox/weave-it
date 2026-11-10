@@ -1,7 +1,7 @@
 ---
 id: 261110-wdfo-code-reviews-use-weave-only-snapshot-refs-as-boundaries
 title: Code reviews use Weave-only snapshot refs as boundaries
-status: accepted
+status: superseded
 date: 2026-11-10
 owner: arpit016
 change: 261110-g2wn-code-reviewers
@@ -12,7 +12,7 @@ applies_to:
   - templates/skills/weave-review/**
   - templates/skills/weave-execute/SKILL.md
 supersedes: []
-superseded_by: null
+superseded_by: 261111-kx9x-review-boundaries-are-checkpoint-commits-with-snapshot-fallback
 ---
 
 # Code reviews use Weave-only snapshot refs as boundaries

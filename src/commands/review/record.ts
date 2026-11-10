@@ -2,8 +2,11 @@
 // --failed) [--independent false] [--json]`: records a reviewer report, a resolution, or the end of
 // a slice review run. Exit 4 means the report was invalid (nothing written); exit 5 means a plan
 // finding needs a person.
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import type { Command } from "commander";
-import { ChangeCommandError } from "../../lib/changes.js";
+import { activeChangeContext, ChangeCommandError, recordPlanningCheckpoint } from "../../lib/changes.js";
+import { renderCheckpointLine, type CheckpointOutcome } from "../../lib/checkpoints.js";
 import {
   failRun,
   finalizeRun,
@@ -32,6 +35,7 @@ interface ReviewRecordOptions {
   finalize?: boolean;
   failed?: boolean;
   independent?: string;
+  summary?: string;
   json?: boolean;
 }
 
@@ -58,6 +62,7 @@ export function registerReviewRecord(review: Command): void {
     .option("--finalize", "end the run as reviewed or reviewed with rulings")
     .option("--failed", "end the run as review failed after a second invalid report")
     .option("--independent <bool>", "false when the review ran inline instead of in a separate reviewer")
+    .option("--summary <text>", "one-line gist for the checkpoint commit subject")
     .option("--json", "print machine-readable JSON")
     .action(async (options: ReviewRecordOptions) => {
       const json = options.json ?? false;
@@ -65,9 +70,14 @@ export function registerReviewRecord(review: Command): void {
       await runAction(json, async () => {
         try {
           const result = await reviewRecord(options);
-          writeResult(result, json, renderReviewRecordResult(result));
+          const checkpoint = await reviewCheckpoint(options, result);
+          const withCheckpoint = checkpoint ? { ...result, checkpoint } : result;
+          const line = renderCheckpointLine(checkpoint);
+          writeResult(withCheckpoint, json, line ? `${renderReviewRecordResult(result)}\n${line}` : renderReviewRecordResult(result));
         } catch (error) {
           if (error instanceof ChangeCommandError) failure = error.code;
+          // A plan finding left the run waiting on a person: that is a recorded moment too.
+          if (failure === "plan_finding_requires_person") await reviewCheckpoint(options, undefined, "waiting_on_person");
           throw error;
         }
       });
@@ -178,4 +188,45 @@ async function readStdin(): Promise<string> {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+// Recording the end of a review run, or a run that now waits on a person, commits the review
+// records (decision 261111-htho). Reports and ordinary resolutions are swept up by that commit.
+async function reviewCheckpoint(
+  options: ReviewRecordOptions,
+  result: ReviewRecordResult | undefined,
+  forcedState?: string,
+): Promise<CheckpointOutcome | undefined> {
+  const state = forcedState ?? reviewMomentState(options, result);
+  if (!state || !options.run) return undefined;
+  try {
+    const context = await activeChangeContext({ cwd: process.cwd() });
+    const [scope, run] = options.run.split("/");
+    const slice = scope && scope !== "change" ? await sliceFolderFor(context.change.changePath, scope) : undefined;
+    return await recordPlanningCheckpoint(
+      context,
+      { kind: "review", ...(slice ? { slice } : {}), run: run ?? options.run, result: state },
+      options.summary ? { summary: options.summary } : {},
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function reviewMomentState(options: ReviewRecordOptions, result: ReviewRecordResult | undefined): string | undefined {
+  if (!result) return undefined;
+  if ("verdict" in result) return String(result.verdict);
+  if (options.finalize || options.failed) return "state" in result ? String(result.state) : options.failed ? "review_failed" : "reviewed";
+  if ("state" in result && result.state === "waiting_on_person") return "waiting_on_person";
+  return undefined;
+}
+
+// The slice folder name (`02-slug`) for a run scope such as `02` or `02-slug`.
+async function sliceFolderFor(changePath: string, scope: string): Promise<string | undefined> {
+  try {
+    const names = await readdir(path.join(changePath, "task-slices"));
+    return names.find((name) => name === scope || name.startsWith(`${scope}-`));
+  } catch {
+    return undefined;
+  }
 }

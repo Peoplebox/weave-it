@@ -14,10 +14,12 @@ Define how `weave advance` starts the next lifecycle phase, how a run is finishe
   - `terminal`: the same session in a new terminal, returning at once. Openers are tried in order: herdr (`HC_TERMINAL_ID` set and `herdr-app` on `PATH`; `herdr-app do tab.new`), tmux (`TMUX` set; `tmux new-window -d`), iTerm2 (`TERM_PROGRAM=iTerm.app`), and Terminal.app on macOS. None is a Weave dependency. The terminal runs the session followed by `weave advance --finish-run <run-id>`. The terminal opens before the run is recorded, so one that fails to open (`no_terminal`) leaves no run behind.
   - `background`: a headless session. For Claude, `--permission-mode acceptEdits` (unless `--permission-mode` is given), `--output-format stream-json --verbose`, and `--allowedTools` limited to web lookups, `weave`, read-only `git`, and `ls`. From an agent (no terminal) it is detached; from a terminal it runs in place.
 
+Sessions Weave launches itself (`here`, `terminal`, `background`) carry `WEAVE_UNATTENDED=1` (the terminal command is prefixed with it). Recording a lane in any phase makes a planning checkpoint commit through Weave with every project hook disabled; build and fix commits refuse under the marker. Handoff briefs add that recording progress makes Weave's checkpoint commit, that the sub-agent must not run git commit, and that it should relay a failed checkpoint or the `commits_enabled` notice (decision `261111-7orw`, which supersedes `261108-4z8l`; see [checkpoint-commits](../features/checkpoint-commits/behavior.md)).
+
 ## Runs
 
 - Each run records `launch` and, for `terminal`, `where`.
-- `weave change progress <lane>` finishes every `running` run of that lane as `succeeded`, so a session that records its lane finishes its run even while it stays open.
+- `weave change progress <lane>` finishes every `running` run of that lane as `succeeded`, so a session that records its lane finishes its run even while it stays open. When that progress's planning commit failed, the run also records `checkpoint: {status, reason, detail}`.
 - `weave advance --finish-run <run-id>` (used after a sub-agent returns, and by terminal sessions when they end) finishes a still-running run as `succeeded` if its lane was progressed after the run started, otherwise `incomplete`, and then keeps advancing unless `--once`.
 - A background run finishes when its process exits; if the session already progressed the lane, that recorded result is kept.
 

@@ -401,7 +401,11 @@ describe("agent skills", () => {
     expect(skill.content).toContain("active task index status");
     expect(skill.content).toContain("acceptance criteria checkboxes that were actually satisfied");
     expect(skill.content).toContain("Finish with a grouped outcome summary");
-    expect(skill.content).toContain("did not commit, push, open a PR, create remote branches, stash, discard changes, or publish external issue updates");
+    expect(skill.content).toContain("did not push, open a PR, create remote branches, stash, discard changes, or publish external issue updates, and name the checkpoint commits Weave made");
+    // Checkpoint commits (decision 261111-htho): Weave commits, the skill never runs git commit itself.
+    expect(skill.content).toContain("It must not run `git commit` itself");
+    expect(skill.content).toContain("Before the first task of a slice moves to `in_progress`, run `weave slice rollup --all --json`, whether or not review is active.");
+    expect(skill.content).toContain("Report its build commit from `checkpoints[]`");
     expect(skill.content).not.toContain("# Plan Mode Guard");
     expect(skill.content).not.toContain("# Lifecycle Staleness Verification");
     expect(skill.sourcePath).toContain(path.join("templates", "skills", "weave-execute", "SKILL.md"));
@@ -860,6 +864,13 @@ describe("agent skills", () => {
     for (const [, entry] of Object.entries(manifest.installed.claude.skills)) {
       expect(entry.installed_from).toMatch(/^\d+\.\d+\.\d+/);
     }
+  });
+
+  it("tells every skill how to surface checkpoint commits and to pass --summary when recording progress", () => {
+    expect(EXPECTED_SILENT_COMMAND_OUTPUT).toContain("Checkpoint commits (`checkpoint` or `checkpoints[]` in a result)");
+    expect(EXPECTED_SILENT_COMMAND_OUTPUT).toContain("`notice: commits_enabled`");
+    expect(EXPECTED_SILENT_COMMAND_OUTPUT).toContain("never retry or block on it");
+    expect(EXPECTED_LIFECYCLE_SYNC_PROTOCOL).toContain('6. Add `--summary "<one line>"`: the subject of the checkpoint commit Weave makes.');
   });
 
   it("ships every bundled SKILL.md template with the byte-identical Silent Weave Command Output block", async () => {

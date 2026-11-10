@@ -90,7 +90,9 @@ export function snapshotMessage(mergeBase: string | undefined): string {
 
 // The merge-base recorded in a snapshot commit message, or undefined when it was unknown.
 export function parseSnapshotMergeBase(message: string): string | undefined {
-  const match = /^merge-base: ([0-9a-f]{7,64})$/m.exec(message);
+  // Snapshots record `merge-base: <sha>`; checkpoint commits carry a `Weave-Merge-Base:` trailer
+  // (decision 261111-kx9x).
+  const match = /^(?:merge-base|Weave-Merge-Base): ([0-9a-f]{7,64})$/m.exec(message);
   return match?.[1];
 }
 

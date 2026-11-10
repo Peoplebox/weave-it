@@ -6,8 +6,10 @@ import {
   adoptChange,
   inactiveReviewCause,
   listSlices,
+  readSliceReview,
   resolveSlice,
   reviewActivation,
+  type SliceLocation,
   type InactiveReviewCause,
   type ReviewActivation,
   type ReviewContext,
@@ -19,7 +21,10 @@ import {
   type ChangeReviewStatus,
   type SliceReviewStatus,
 } from "../../lib/review/summary.js";
+import { boundaryKindOf, type BoundaryKind } from "../../lib/review/commit-boundary.js";
+import { sliceRunEndRef } from "../../lib/review/package.js";
 import { activeReviewContext, runAction, stateLabel, writeResult } from "./shared.js";
+import { sliceRepoCheckouts } from "./snapshot.js";
 
 export type { ChangeReviewStatus, ReportedSliceState, SliceReviewStatus } from "../../lib/review/summary.js";
 
@@ -84,7 +89,9 @@ export async function reviewStatus(ctx: ReviewContext, options: { slice?: string
   };
 
   if (selected) {
-    return { status: "ok", scope: "slice", ...fields, ...(await sliceReviewStatus(ctx, selected, activation)) };
+    const sliceStatus = await sliceReviewStatus(ctx, selected, activation);
+    const boundary = await latestEndBoundary(ctx, selected);
+    return { status: "ok", scope: "slice", ...fields, ...sliceStatus, ...(boundary ? { boundary } : {}) };
   }
   const change = await changeReviewStatus(ctx, activation);
   if (options.change) {
@@ -142,4 +149,18 @@ export function inactiveCauseLabel(cause: InactiveReviewCause | null): string {
     default:
       return "inactive";
   }
+}
+
+// Which kind of end boundary the slice's latest run measured to, per repo (decision 261111-kx9x).
+async function latestEndBoundary(ctx: ReviewContext, slice: SliceLocation): Promise<Record<string, { kind: BoundaryKind }> | undefined> {
+  const review = await readSliceReview(slice.statusPath);
+  const run = typeof review?.latest_run === "string" ? review.latest_run : undefined;
+  if (!run) return undefined;
+  const report: Record<string, { kind: BoundaryKind }> = {};
+  for (const repo of await sliceRepoCheckouts(ctx, slice)) {
+    if (!repo.path) continue;
+    const kind = await boundaryKindOf(repo.path, sliceRunEndRef(ctx.changeId, slice.id, run));
+    if (kind) report[repo.id] = { kind };
+  }
+  return Object.keys(report).length > 0 ? report : undefined;
 }

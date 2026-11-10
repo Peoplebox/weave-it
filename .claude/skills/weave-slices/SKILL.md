@@ -37,6 +37,13 @@ Notice handling:
 - `skills_modified`: if the user asks to update skills and installed skills have local edits, say:
   `Some installed skills have local edits. \`weave agent update\` may skip or protect them; run \`weave status\` or \`weave agent diff\` before updating.`
 
+Checkpoint commits (`checkpoint` or `checkpoints[]` in a result): say when one
+failed, or was skipped for `wrong_branch`, `detached_head`, or
+`operation_in_progress`, with its `reason` and `detail` (the step was still
+recorded; never retry or block on it). List a build or fix commit's files. On
+`notice: commits_enabled`, say once that Weave now commits each recorded stage
+and finished slice, and `weave settings commits off` turns it off for you.
+
 Do not say `Notices: ...`, `The command returned notices`, raw
 `notices[].message`, full notice JSON, or full skill lists unless the user
 asks for diagnostics.
@@ -137,7 +144,7 @@ Use files under `templates/skills/weave-slices/`:
 
 Follow the Lifecycle Progress and Staleness protocol before calling `weave change progress`.
 
-Do not commit, push, or open PRs.
+Do not run `git commit`, push, or open PRs. Recording progress makes Weave's checkpoint commit.
 
 # Lifecycle Staleness Verification
 
@@ -179,6 +186,8 @@ Procedure:
    verification rationale. Do not clear flags without reading both artifacts.
 
 5. Never edit `status.yml` by hand to manipulate stale state. Use the CLI.
+
+6. Add `--summary "<one line>"`: the subject of the checkpoint commit Weave makes.
 
 Failure mode: if you are uncertain whether a dependent is in content sync,
 prefer the pessimistic default (omit `--no-invalidate` and `--invalidate`).

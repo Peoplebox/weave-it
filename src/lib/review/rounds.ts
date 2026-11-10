@@ -19,6 +19,7 @@ import { writeFileAtomic } from "../local-state.js";
 import { readWorkspaceMetadata } from "../workspace-repos.js";
 import { resolveDiffBase } from "./base.js";
 import { changeRunRef, SnapshotBoundary, sliceRoundRef, type ReviewBoundary } from "./boundary.js";
+import { CommitBoundary } from "./commit-boundary.js";
 import { guidelineRepos, resolveGuidelines, type GuidelineResolution } from "./guidelines.js";
 import { ensureTmpIgnored, fenced, packageDiffContext, slicePackageDir } from "./package.js";
 import {
@@ -280,6 +281,16 @@ export async function buildFixRoundPackage(
   const changeStatus = await readYamlRecord(path.join(ctx.changePath, "status.yml"));
   const mainRoot = (await mainWorktreePath(ctx.weaveRoot)) ?? ctx.weaveRoot;
   const warnings: string[] = checkouts.some((repo) => !repo.path) ? ["missing_repo_checkout"] : [];
+  if (boundary instanceof CommitBoundary) {
+    // The round's fix commit names the findings it set out to fix (decision 261111-kx9x).
+    const targetIds = new Set(roundTargets(initial.findings));
+    boundary.setFixContext({
+      run: target.runId,
+      round,
+      scope: target.scope,
+      findings: initial.findings.filter((finding) => targetIds.has(finding.id)).map((finding) => ({ id: finding.id, detail: finding.detail })),
+    });
+  }
   const repos: RoundRepoDiff[] = [];
   for (const repo of present) {
     const base = await resolveDiffBase({ repoPath: repo.path, repoId: repo.id, changeStatus, mainRoot });

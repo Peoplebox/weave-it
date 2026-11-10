@@ -9,6 +9,7 @@ import {
   type AgentLaunchPlan,
   defaultLaunchAgent,
   formatLaunchPlan,
+  unattendedEnv,
 } from "./agent-launchers.js";
 import { hasSubstantiveMarkdown, resolveArchitectureArtifact } from "./architecture-artifact.js";
 import {
@@ -345,6 +346,7 @@ export function phaseBrief(input: { skill: string; lane: ChangeStage; changeId: 
         ]
       : []),
     `Finish the way the skill says, with \`weave change progress ${input.lane}\`. That also completes Weave run ${input.runId}.`,
+    "Recording progress also makes Weave's checkpoint commit; do not run git commit yourself. If a Weave command reports a failed checkpoint or the commits_enabled notice, say so in your final summary.",
   ].join("\n");
 }
 
@@ -468,7 +470,7 @@ async function openPhaseTerminal(
   const weave = options.weaveCommand ?? [process.execPath, process.argv[1] ?? "weave"];
   // When the session ends, Weave records how the run went and starts any next phase.
   const command = [
-    formatLaunchPlan(plan),
+    `WEAVE_UNATTENDED=1 ${formatLaunchPlan(plan)}`,
     [...weave, "advance", "--finish-run", input.runId, ...(options.once ? ["--once"] : [])].map(shellQuote).join(" "),
   ].join("; ");
   const token = input.change.id.split("-")[1] ?? input.change.id;
@@ -476,7 +478,7 @@ async function openPhaseTerminal(
 }
 
 function runInteractiveSession(plan: AgentLaunchPlan, cwd: string): Promise<number> {
-  const env = { ...process.env };
+  const env: NodeJS.ProcessEnv = { ...process.env, ...unattendedEnv };
   delete env.CLAUDECODE;
   return new Promise((resolve, reject) => {
     const child = spawn(plan.command, plan.args, { cwd, env, stdio: "inherit" });

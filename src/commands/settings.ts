@@ -1,7 +1,15 @@
 import { Command } from "commander";
 import { ChangeCommandError } from "../lib/change-error.js";
 import { canPrompt, currentChoices, defaultMenuPrompt, validateExplicitChoice, type MenuPrompt, type OpenMenuChoice } from "../lib/open-change.js";
-import { clearOpenChoice, loadUserSettings, saveOpenChoice, userSettingsPath, type OpenChoice, type SettingsScope } from "../lib/user-settings.js";
+import {
+  clearOpenChoice,
+  loadUserSettings,
+  saveOpenChoice,
+  updateUserSettings,
+  userSettingsPath,
+  type OpenChoice,
+  type SettingsScope,
+} from "../lib/user-settings.js";
 import { findWorkspaceMode } from "../lib/workspace-mode.js";
 import { mainCheckoutPath } from "../lib/worktrees.js";
 import { runAction } from "./change.js";
@@ -45,7 +53,65 @@ export function settingsCommand(): Command {
       });
     });
 
+  command
+    .command("commits")
+    .description("Turn Weave's automatic checkpoint commits on or off for you. A project's own off switch still wins.")
+    .argument("<state>", "on or off")
+    .option("--project", "apply to this project only, instead of your default for every project")
+    .option("--json", "print machine-readable JSON")
+    .action(async (state: string, options: { project?: boolean; json?: boolean }) => {
+      const json = options.json ?? false;
+      await runAction(json, async () => {
+        const result = await settingsCommits(state, options, {});
+        process.stdout.write(json ? `${JSON.stringify(result, null, 2)}\n` : `${result.message}\n`);
+      });
+    });
+
   return command;
+}
+
+export interface SettingsCommitsResult {
+  status: "ok";
+  scope: SettingsScope;
+  project?: string;
+  enabled: boolean;
+  settings_path: string;
+  message: string;
+}
+
+// `weave settings commits on|off [--project]`: the personal switch (decision 261111-htho).
+export async function settingsCommits(
+  state: string,
+  options: { project?: boolean },
+  deps: { cwd?: string; env?: NodeJS.ProcessEnv },
+): Promise<SettingsCommitsResult> {
+  const env = deps.env ?? process.env;
+  const cwd = deps.cwd ?? process.cwd();
+  const value = state.trim().toLowerCase();
+  if (value !== "on" && value !== "off") {
+    throw new ChangeCommandError("invalid_arguments", `Use on or off, not ${state}.`);
+  }
+  const enabled = value === "on";
+  const scope: SettingsScope = options.project ? "project" : "default";
+  const project = options.project ? await projectKey(cwd) : undefined;
+  await updateUserSettings(env, (settings) => {
+    const commits = { ...(settings.commits ?? {}) };
+    if (scope === "project" && project) {
+      commits.projects = { ...(commits.projects ?? {}), [project]: { enabled } };
+    } else {
+      commits.default = { enabled };
+    }
+    return { ...settings, commits };
+  });
+  const where = scope === "project" ? `this project (${project})` : "every project";
+  return {
+    status: "ok",
+    scope,
+    ...(project ? { project } : {}),
+    enabled,
+    settings_path: userSettingsPath(env),
+    message: `Checkpoint commits ${enabled ? "on" : "off"} for you in ${where}.${enabled ? " A project that turns them off still wins." : ""}`,
+  };
 }
 
 export async function settingsOpen(

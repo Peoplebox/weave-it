@@ -191,6 +191,9 @@ describe("weave review package --slice (repo mode)", () => {
     expect(exitCode).toBeUndefined();
     const packagePath = path.join(root, ".weave", "tmp", "reviews", changeId, "02-work", "r1.package.md");
     expect(result).toEqual({
+      // No build commit exists for the slice in this fixture, so the end boundary is a snapshot
+      // (decision 261111-kx9x).
+      boundary: { root: { kind: "snapshot", reason: "build_not_committed" } },
       status: "ok",
       run_id: "02-work/r1",
       package_path: packagePath,

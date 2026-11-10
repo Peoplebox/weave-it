@@ -1,0 +1,98 @@
+version: 1
+id: 261111-kdv6-commit-checkpoints
+slug: commit-checkpoints
+title: commit-checkpoints
+type: feat
+stage: slices
+branch: change/261111-kdv6-commit-checkpoints
+auto_advance:
+  questions_to_research: true
+  findings_to_questions: false
+  exploration_to_prd: true
+created_at: 2026-11-10T19:48:06.988Z
+updated_at: 2026-11-10T22:19:01.471Z
+checkout:
+  mode: worktree
+  repos:
+    root:
+      path: .
+      base: origin/main
+      base_commit: abcf0998c0c70c8b5b68a45efb20182120e48669
+artifacts:
+  exploration:
+    sources:
+      - discussion
+    updated_at: 2026-11-10T21:18:46.785Z
+  prd:
+    sources:
+      - exploration
+      - sessions
+    updated_at: 2026-11-10T21:21:47.119Z
+  architecture:
+    sources:
+      - prd
+      - codebase
+      - discussion
+    updated_at: 2026-11-10T21:45:57.849Z
+  slices:
+    sources:
+      - architecture
+    updated_at: 2026-11-10T21:50:14.944Z
+stress_tests:
+  exploration:
+    verdict: holds-with-changes
+    judged_at: 2026-11-10T21:18:46.970Z
+    artifact_updated_at: 2026-11-10T21:18:46.785Z
+    session: wiki/changes/261111-kdv6-commit-checkpoints/sessions/20261111-024732-vrc8-exploration-stress-test.md
+    reason: Two-tier direction stands; commit trigger redefined as status-recorded
+      with a catch-up save, planning commits skip project checks, and control
+      and edge rules added.
+  architecture:
+    verdict: holds-with-changes
+    judged_at: 2026-11-10T21:45:58.021Z
+    artifact_updated_at: 2026-11-10T21:45:57.849Z
+    session: wiki/changes/261111-kdv6-commit-checkpoints/sessions/20261111-031530-0x5g-architecture-stress-test.md
+    reason: Checkpoint module and commit-backed end boundaries stand; build state
+      moved to git trailers and hook, scope, timeout, and switch handling
+      tightened.
+runs:
+  - id: prd-20261110T211853-oo6f
+    lane: prd
+    skill: weave-prd
+    agent: claude
+    trigger: auto-advance
+    transition: exploration_to_prd
+    upstream_updated_at: 2026-11-10T21:18:46.785Z
+    launch: handoff
+    started_at: 2026-11-10T21:18:53.993Z
+    finished_at: 2026-11-10T21:21:47.119Z
+    result: succeeded
+execution:
+  version: 1
+  branch: change/261111-kdv6-commit-checkpoints
+  repos:
+    root:
+      path: .
+      mode: repo
+      branch: change/261111-kdv6-commit-checkpoints
+      state: prepared
+      branch_status: already_active
+      prepared_head: abcf0998c0c70c8b5b68a45efb20182120e48669
+      prepared_at: 2026-11-10T21:50:32.567Z
+      verified_at: 2026-11-10T21:50:32.567Z
+knowledge:
+  status: updated
+  updated_at: 2026-11-10T22:19:01.471Z
+  domains:
+    - change-workflow
+    - cli-commands
+  shared: []
+  files:
+    - wiki/knowledge/domains/change-workflow/features/checkpoint-commits/behavior.md
+    - wiki/knowledge/domains/change-workflow/features/code-reviews/behavior.md
+    - wiki/knowledge/domains/change-workflow/features/weave-execute/behavior.md
+    - wiki/knowledge/domains/change-workflow/domain-wide/auto-advance-launch.md
+    - wiki/knowledge/domains/change-workflow/index.md
+    - wiki/knowledge/domains/cli-commands/features/core-command-reference/behavior.md
+  delta: wiki/changes/261111-kdv6-commit-checkpoints/knowledge-delta.md
+  reason: Documented checkpoint commits.

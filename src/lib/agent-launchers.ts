@@ -50,6 +50,10 @@ export const backgroundAllowedTools = [
   "Bash(ls *)",
 ];
 
+// Sessions Weave starts itself carry this marker; checkpoint code commits refuse under it and the
+// first-commit notice is not marked delivered (decision 261111-7orw).
+export const unattendedEnv = { WEAVE_UNATTENDED: "1" } as const;
+
 export const claudeLauncher: AgentLauncher = {
   agent: "claude",
   acceptsSessionId: true,
@@ -85,7 +89,7 @@ export const claudeLauncher: AgentLauncher = {
     const plan = this.plan(request);
     // The child must start its own session rather than attach to the one that ran
     // `weave advance`, so the parent's session marker is not passed down.
-    const env = { ...process.env };
+    const env: NodeJS.ProcessEnv = { ...process.env, ...unattendedEnv };
     delete env.CLAUDECODE;
     const exitCode = await runToLog(plan, request.cwd, request.logPath, env);
     return { exitCode, sessionId: request.sessionId };
@@ -115,7 +119,7 @@ export function commandTemplateLauncher(template: string): AgentLauncher {
     plan,
     interactive: plan,
     async launch(request) {
-      return { exitCode: await runToLog(plan(request), request.cwd, request.logPath, { ...process.env }) };
+      return { exitCode: await runToLog(plan(request), request.cwd, request.logPath, { ...process.env, ...unattendedEnv }) };
     },
   };
 }

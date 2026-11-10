@@ -1,0 +1,16 @@
+version: 1
+id: 04-build-commits
+title: Build commits when a slice finishes
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 01-planning-checkpoint-core
+  - 03-commit-controls
+task_summary:
+  total: 3
+  done: 3
+  blocked: 0
+created_at: 2026-11-11T03:30:00.000Z
+updated_at: 2026-11-10T22:06:51.438Z

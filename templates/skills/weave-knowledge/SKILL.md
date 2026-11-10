@@ -103,7 +103,7 @@ When there is durable behavior impact:
 
 - update current-state specs under `wiki/knowledge/**`
 - create or update `knowledge-delta.md`
-- call `weave change knowledge updated`
+- call `weave change knowledge updated` with `--summary "<one line>"` (the subject of Weave's checkpoint commit)
 
 Example:
 
@@ -159,6 +159,13 @@ Notice handling:
   `The installed \`<skill-name>\` skill has local edits, so its behavior may differ from the bundled template. Run \`weave status\` or \`weave agent diff\` if you want to inspect the difference.`
 - `skills_modified`: if the user asks to update skills and installed skills have local edits, say:
   `Some installed skills have local edits. \`weave agent update\` may skip or protect them; run \`weave status\` or \`weave agent diff\` before updating.`
+
+Checkpoint commits (`checkpoint` or `checkpoints[]` in a result): say when one
+failed, or was skipped for `wrong_branch`, `detached_head`, or
+`operation_in_progress`, with its `reason` and `detail` (the step was still
+recorded; never retry or block on it). List a build or fix commit's files. On
+`notice: commits_enabled`, say once that Weave now commits each recorded stage
+and finished slice, and `weave settings commits off` turns it off for you.
 
 Do not say `Notices: ...`, `The command returned notices`, raw
 `notices[].message`, full notice JSON, or full skill lists unless the user

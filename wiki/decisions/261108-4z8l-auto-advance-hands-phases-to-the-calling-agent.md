@@ -1,7 +1,7 @@
 ---
 id: 261108-4z8l-auto-advance-hands-phases-to-the-calling-agent
 title: Auto-advance hands phases to the calling agent
-status: accepted
+status: superseded
 date: 2026-11-08
 owner: arpit016
 applies_to:
@@ -10,7 +10,7 @@ applies_to:
   - src/lib/agent-launchers.ts
   - src/lib/agent-permissions.ts
 supersedes: []
-superseded_by: null
+superseded_by: 261111-7orw-auto-advance-hands-phases-to-the-calling-agent-and-phases-save-their-stage-through-weave
 ---
 
 # Auto-advance hands phases to the calling agent

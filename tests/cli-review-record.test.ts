@@ -262,7 +262,7 @@ describe("weave review record --report", () => {
     const fixture = await setup();
     const { result, exitCode } = await run(["record", "--run", "02/r1", "--failed"]);
     expect(exitCode).toBeUndefined();
-    expect(result).toEqual({ status: "ok", run: "02-work/r1", state: "review_failed" });
+    expect(result).toEqual({ status: "ok", run: "02-work/r1", state: "review_failed", checkpoint: expect.objectContaining({ kind: "planning" }) });
     expect(await sliceReview(fixture)).toMatchObject({ state: "review_failed", latest_run: "r1" });
     expect((await findingsFile(fixture)).outcome).toMatchObject({ state: "review_failed" });
     expect(await readFile(path.join(fixture.slicePath, "review.md"), "utf8")).toContain("- State: review failed");
@@ -380,6 +380,8 @@ describe("weave review record --finalize", () => {
       released_from: [],
       from_main: {},
       warnings: [],
+      // Ending the run is a recorded moment: its review records are committed (decision 261111-htho).
+      checkpoint: expect.objectContaining({ kind: "planning" }),
     });
 
     const review = (await sliceReview(fixture)) as Record<string, any>;

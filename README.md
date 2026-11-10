@@ -698,6 +698,18 @@ Every phase run is logged under `status.yml.runs` with `lane`, `skill`, `agent`,
 
 When Weave starts a session itself, it uses an agent adapter: `claude` runs `claude "use the <skill> skill for change <id>"` with a Weave-chosen `--session-id`, adding `-p` and streaming output for background runs; `advance.command` runs your template. `--permission-mode <mode>` overrides the session's permission mode.
 
+### Checkpoint commits
+
+Weave commits a change's work on the change's own branch, so planning is never lost and the history reads stage by stage and slice by slice. Nobody has to remember to commit, and it works the same in every agent because the commits come from Weave's own commands:
+
+- **Planning commits.** Every command that records the change's status makes one: `weave change progress` (with `--summary "<one line>"` for the subject), `verdict`, `clear-stale`, `knowledge`, and `weave review record` when a review run ends or waits on a person. A planning commit holds the change's folder, the decisions it drafted (and the ones they supersede), its knowledge pages, and anything you had staged. It runs none of the project's git hooks. Leftovers that belong to no recorded step, such as session notes, go first into their own "Planning notes" commit.
+- **Build commits.** `weave slice rollup` commits a slice when it is ready for review: everything in the slice's repos except other changes' folders and `.weave/coding-guidelines*.md`, with the project's hooks. The commit message names the slice's purpose and finished tasks. A rejected build commit is retried at the next rollup until another slice starts; that slice's build commit then carries the leftovers.
+- **Fix commits.** Each review fix round, and the final review's fix batch, becomes its own commit, and review end boundaries point at these commits. Packages report `boundary: commit` or `snapshot` per repo; snapshots remain the fallback.
+
+Commits are best-effort: a failure is reported with its reason and never blocks the step. Weave never pushes, amends, or commits on another branch, uses your own git identity, and adds `Weave-*` trailers (for example `Weave-Change`, `Weave-Slice`). Sessions Weave starts itself (`WEAVE_UNATTENDED=1`) make planning commits but never build or fix commits.
+
+Switches: `commits.enabled: false` in `.weave/workspace.yml` turns commits off for everyone (in the main checkout or the change folder); `weave settings commits off [--project]` turns them off just for you; `weave change skip-commits --reason "<why>"` skips one change. `commits.subject_template` (a string, or a map per `planning`, `catch-up`, `build`, `fix`, `final-fix`, with `{subject}`, `{stage}`, `{slice}`, `{change}`) shapes subjects to your conventions, and `commits.code_timeout_seconds` (default 300) bounds hooks on code commits. Because every change now has commits from its first stage, a change abandoned during planning reads "closed, not landed", and a planning save after merging shows "landed with newer commits".
+
 If a target is not a git repo, Weave still writes the change artifacts and reports branch creation as skipped. `switch` blocks when affected git repos have uncommitted changes; `new` does not block so already-started local work can be captured as a new change.
 
 ## `weave adr`

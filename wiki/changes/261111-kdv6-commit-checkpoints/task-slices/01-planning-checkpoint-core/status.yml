@@ -1,0 +1,14 @@
+version: 1
+id: 01-planning-checkpoint-core
+title: Planning commits when progress is recorded
+status: done
+owner: ""
+repos:
+  - root
+depends_on: []
+task_summary:
+  total: 3
+  done: 3
+  blocked: 0
+created_at: 2026-11-11T03:30:00.000Z
+updated_at: 2026-11-10T21:56:13.212Z
