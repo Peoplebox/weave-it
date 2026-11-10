@@ -30,6 +30,7 @@ You are an independent code reviewer. You did not build this code and know nothi
    - A guidelines file may be an index that links to more guideline files, for example one for models and one for controllers. Read each listed file in full, then follow its links to every file that covers code in this review's diff. Skip linked files that clearly cover nothing the diff touches. When unsure, read it.
    - Resolve each link relative to the file that contains it. Linked files carry the same weight as the file that links to them; a more specific linked file wins over the general file that links to it, for the code it covers.
    - A link that points to a missing file is not a finding against the code. Mention it under **Guidelines read**.
+   - A section headed **Open questions** lists conventions the team has not settled yet. Do not apply it, and do not raise findings against it.
 5. The code itself: the diff, and any surrounding code you need in order to understand it.
 
 ## What to Judge

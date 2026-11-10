@@ -23,7 +23,7 @@ Sliced changes store work under `task-slices/<NN>-<slug>/`; legacy flat changes 
 - [weave-issues](features/weave-issues/behavior.md): **superseded** by `weave-slices` for flat `tasks.md` generation; retained for legacy flat-mode reference only.
 - [weave-prepare](features/weave-prepare/behavior.md): **deprecated**; branch prep absorbed into `weave-execute`. `weave task prepare` CLI remains.
 - [weave-execute](features/weave-execute/behavior.md): agent-first local execution in slice mode or flat legacy mode, including branch prep, dependency handling, rollup episode boundaries, task evidence updates, and the code review hook.
-- [code-reviews](features/code-reviews/behavior.md): slice reviews and the final review by fresh reviewers (`weave-review` skill plus the `weave review` command group): snapshots, packages, findings, fix rounds, plan problems, rulings, out-of-date detection, the gate, verdicts, coding guidelines, and switches. See also its [decision tables](features/code-reviews/decision-tables.md).
+- [code-reviews](features/code-reviews/behavior.md): slice reviews and the final review by fresh reviewers (`weave-review` skill plus the `weave review` command group): snapshots, packages, findings, fix rounds, plan problems, rulings, out-of-date detection, the gate, verdicts, coding guidelines (drafted by the `weave-coding-guidelines` skill), and switches. See also its [decision tables](features/code-reviews/decision-tables.md).
 - [weave-capture](features/weave-capture/behavior.md): two-mode capture (artifact vs session-only) of the current discussion, including the Defensive Lane Verification step for explicit target/substance mismatches.
 
 ## Domain-Wide Behavior

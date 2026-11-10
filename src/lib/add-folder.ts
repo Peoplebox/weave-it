@@ -10,6 +10,7 @@ import {
   loadOrCreateSession,
   saveCurrentSession,
 } from "./session-state.js";
+import { guidelinesFileName, guidelinesHint } from "./review/guidelines.js";
 import { ensureWeaveScaffold } from "./weave-scaffold.js";
 import { findWorkspaceMode, isWorkspaceMode } from "./workspace-mode.js";
 import {
@@ -150,7 +151,7 @@ async function addFolderToWorkspace(input: {
     }
 
     if (existingId) {
-      return workspaceMaterializedMessage(existingId, relativePath, workspacePath);
+      return withGuidelinesHint(workspaceMaterializedMessage(existingId, relativePath, workspacePath), existingId, repoAbsolutePath);
     }
 
     remote = url;
@@ -185,7 +186,7 @@ async function addFolderToWorkspace(input: {
 
       const existingId = findRegisteredRepoByPath(metadata, relativePath);
       if (existingId) {
-        return workspaceMaterializedMessage(existingId, relativePath, workspacePath);
+        return withGuidelinesHint(workspaceMaterializedMessage(existingId, relativePath, workspacePath), existingId, repoAbsolutePath);
       }
     }
 
@@ -202,10 +203,21 @@ async function addFolderToWorkspace(input: {
   });
 
   const remoteText = remote ? `\n\nRemote:\n  ${remote}` : "";
-  return {
-    status: "added",
-    message: `Registered repo in workspace: ${id}\n\nPath:\n  ${relativePath}${remoteText}\n\nWorkspace:\n  ${workspacePath}\n\nNext:\n  weave workspace`,
-  };
+  return withGuidelinesHint(
+    {
+      status: "added",
+      message: `Registered repo in workspace: ${id}\n\nPath:\n  ${relativePath}${remoteText}\n\nWorkspace:\n  ${workspacePath}\n\nNext:\n  weave workspace`,
+    },
+    id,
+    repoAbsolutePath,
+  );
+}
+
+// A newly added repo with no guidelines file of its own gets a pointer to the skill that drafts
+// one. Weave never writes the file itself here.
+async function withGuidelinesHint(result: AddFolderCommandResult, id: string, repoAbsolutePath: string): Promise<AddFolderCommandResult> {
+  if (await pathExists(path.join(repoAbsolutePath, guidelinesFileName))) return result;
+  return { ...result, message: `${result.message}\n\n${guidelinesHint(id)}` };
 }
 
 function workspaceAlreadyRegisteredMessage(

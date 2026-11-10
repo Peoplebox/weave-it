@@ -1,7 +1,7 @@
 ---
 id: 261110-dtld-coding-guidelines-live-in-weave-coding-guidelines-md-at-workspace-and-repo-roots
 title: Coding guidelines live in .weave/coding-guidelines.md at workspace and repo roots
-status: accepted
+status: superseded
 date: 2026-11-10
 owner: arpit016
 change: 261110-g2wn-code-reviewers
@@ -12,7 +12,7 @@ applies_to:
   - src/lib/init-workspace.ts
   - templates/skills/weave-review/**
 supersedes: []
-superseded_by: null
+superseded_by: 261110-gwl5-coding-guidelines-are-drafted-from-the-code-by-a-skill-not-seeded-by-init
 ---
 
 # Coding guidelines live in .weave/coding-guidelines.md at workspace and repo roots

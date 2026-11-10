@@ -10,7 +10,7 @@ import { updateAgentSkills } from "../src/lib/agent-skills.js";
 import { createChange, currentChange } from "../src/lib/changes.js";
 import { buildDoctor } from "../src/lib/doctor.js";
 import { initWorkspace } from "../src/lib/init-workspace.js";
-import { starterGuidelines } from "../src/lib/review/guidelines.js";
+import { guidelinesHint } from "../src/lib/review/guidelines.js";
 import { loadCurrentSession } from "../src/lib/session-state.js";
 import { showWorkspace } from "../src/lib/show-workspace.js";
 
@@ -59,8 +59,9 @@ describe("current session workflow", () => {
     await expect(stat(path.join(cwd, ".weave", "sync.yml"))).resolves.toMatchObject({});
     await expect(stat(path.join(cwd, ".weave", "architecture-considerations.md"))).resolves.toMatchObject({});
     await expect(stat(path.join(cwd, ".weave", "workspace.yml"))).resolves.toMatchObject({});
-    await expect(readFile(path.join(cwd, ".weave", "coding-guidelines.md"), "utf8")).resolves.toBe(starterGuidelines());
-    expect(result.message).toContain(".weave/coding-guidelines.md");
+    // Init no longer writes guidelines; it points to the skill that drafts them from the code.
+    await expect(stat(path.join(cwd, ".weave", "coding-guidelines.md"))).rejects.toThrow();
+    expect(result.message).toContain(guidelinesHint());
     await expect(stat(path.join(cwd, ".git"))).rejects.toThrow();
     await expect(stat(path.join(cwd, "weave"))).rejects.toThrow();
     await expect(stat(path.join(cwd, ".weave", "local.yml"))).rejects.toThrow();
@@ -163,8 +164,8 @@ describe("current session workflow", () => {
     await mkdir(other);
     await git(cwd, ["init", "-q"]);
     await initWorkspace({ cwd, interactive: false, yes: true, folderId: "app", sessionPath });
-    // An existing project: initialised before guidelines existed.
-    await rm(guidelinesFile);
+    // An existing project with no guidelines file.
+    await rm(guidelinesFile, { force: true });
     await git(cwd, ["add", "-A"]);
     await git(cwd, ["commit", "-q", "-m", "Initialize Weave"]);
 
@@ -207,8 +208,8 @@ describe("current session workflow", () => {
     await expect(stat(path.join(workspacePath, "wiki", "changes"))).resolves.toMatchObject({});
     await expect(stat(path.join(workspacePath, ".weave", "sync.yml"))).resolves.toMatchObject({});
     await expect(stat(path.join(workspacePath, ".weave", "architecture-considerations.md"))).resolves.toMatchObject({});
-    await expect(readFile(path.join(workspacePath, ".weave", "coding-guidelines.md"), "utf8")).resolves.toBe(starterGuidelines());
-    expect(result.message).toContain(".weave/coding-guidelines.md");
+    await expect(stat(path.join(workspacePath, ".weave", "coding-guidelines.md"))).rejects.toThrow();
+    expect(result.message).toContain(guidelinesHint());
     expect(workspace).toMatchObject({
       version: 1,
       mode: "workspace",
@@ -254,9 +255,9 @@ describe("current session workflow", () => {
     await expect(stat(path.join(movedRepo, ".git"))).resolves.toMatchObject({});
     await expect(readFile(path.join(movedRepo, "src", "dirty.txt"), "utf8")).resolves.toBe("not committed\n");
     expect(gitignore).toContain("/app-repo/");
-    await expect(readFile(path.join(workspacePath, ".weave", "coding-guidelines.md"), "utf8")).resolves.toBe(starterGuidelines());
+    await expect(stat(path.join(workspacePath, ".weave", "coding-guidelines.md"))).rejects.toThrow();
     await expect(stat(path.join(movedRepo, ".weave", "coding-guidelines.md"))).rejects.toThrow();
-    expect(result.message).toContain(".weave/coding-guidelines.md");
+    expect(result.message).toContain(guidelinesHint());
     expect(workspace.repos["app-repo"]).toMatchObject({
       path: "app-repo",
       kind: "app",
@@ -687,6 +688,24 @@ describe("current session workflow", () => {
       kind: "app",
     });
     expect(workspace.repos["shared-notes"].remote).toBeUndefined();
+  });
+
+  it("points weave add to the guidelines skill only when the added repo has no guidelines file", async () => {
+    const root = await tempDir();
+    const workspacePath = path.join(root, "platform");
+    const sessionPath = path.join(root, ".cache", "current-session.yml");
+    await initWorkspace({ cwd: root, mode: "workspace", workspaceName: "platform", workspacePath, interactive: false, yes: true, sessionPath });
+    await mkdir(path.join(workspacePath, "api"));
+    await mkdir(path.join(workspacePath, "web", ".weave"), { recursive: true });
+    await writeFile(path.join(workspacePath, "web", ".weave", "coding-guidelines.md"), "# Web rules\n");
+
+    const api = await addFolder({ cwd: workspacePath, targetPath: "./api", sessionPath });
+    const web = await addFolder({ cwd: workspacePath, targetPath: "./web", sessionPath });
+
+    expect(api.message).toContain(guidelinesHint("api"));
+    expect(web.message).not.toContain("Coding guidelines:");
+    // weave add never writes a guidelines file itself.
+    await expect(stat(path.join(workspacePath, "api", ".weave", "coding-guidelines.md"))).rejects.toThrow();
   });
 
   it("adopts an outside folder into the workspace via weave add", async () => {

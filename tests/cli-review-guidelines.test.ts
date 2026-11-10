@@ -25,7 +25,7 @@ async function setup(options: { mode: "repo" | "workspace"; repos?: Record<strin
   return root;
 }
 
-async function runJson(args: string[]): Promise<{ result: Record<string, unknown>; exitCode: number | undefined }> {
+async function runJson(args: string[], subcommand = "init"): Promise<{ result: Record<string, unknown>; exitCode: number | undefined }> {
   const chunks: string[] = [];
   const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
     chunks.push(typeof chunk === "string" ? chunk : String(chunk));
@@ -34,7 +34,7 @@ async function runJson(args: string[]): Promise<{ result: Record<string, unknown
   try {
     const command = reviewCommand();
     command.exitOverride();
-    await command.parseAsync(["guidelines", "init", ...args, "--json"], { from: "user" });
+    await command.parseAsync(["guidelines", subcommand, ...args, "--json"], { from: "user" });
   } finally {
     spy.mockRestore();
   }
@@ -94,5 +94,59 @@ describe("weave review guidelines init", () => {
     await expect(runJson(["--repo", "billing"])).resolves.toMatchObject({ result: { status: "error", code: "repo_not_found" }, exitCode: 1 });
     process.exitCode = undefined;
     await expect(runJson(["--repo", "api"])).resolves.toMatchObject({ result: { status: "error", code: "repo_missing" }, exitCode: 1 });
+  });
+});
+
+describe("weave review guidelines status", () => {
+  it("lists the single file in repo mode", async () => {
+    const root = await setup({ mode: "repo" });
+
+    await expect(runJson([], "status")).resolves.toEqual({
+      result: {
+        status: "ok",
+        mode: "repo",
+        checkout_root: root,
+        files: [{ scope: "shared", root: ".", path: ".weave/coding-guidelines.md", status: "absent" }],
+        missing_repos: [],
+      },
+      exitCode: undefined,
+    });
+    await writeFile(path.join(root, ".weave", "coding-guidelines.md"), "# Rules\n");
+    await expect(runJson([], "status")).resolves.toMatchObject({ result: { files: [{ status: "present" }] } });
+  });
+
+  it("lists the shared file and every checked-out repo's file, and reports repos not checked out", async () => {
+    const root = await setup({ mode: "workspace", repos: { api: "services/api", web: "web", docs: "docs" }, checkedOut: ["services/api", "web"] });
+    await mkdir(path.join(root, "web", ".weave"), { recursive: true });
+    await writeFile(path.join(root, "web", ".weave", "coding-guidelines.md"), "# Web rules\n");
+
+    const { result } = await runJson([], "status");
+
+    expect(result.files).toEqual([
+      { scope: "shared", root: ".", path: ".weave/coding-guidelines.md", status: "absent" },
+      { scope: "repo", repo: "api", root: "services/api", path: "services/api/.weave/coding-guidelines.md", status: "absent" },
+      { scope: "repo", repo: "web", root: "web", path: "web/.weave/coding-guidelines.md", status: "present" },
+    ]);
+    expect(result.missing_repos).toEqual(["docs"]);
+    // Read-only: nothing was written.
+    await expect(readFile(path.join(root, ".weave", "coding-guidelines.md"), "utf8")).rejects.toThrow();
+  });
+
+  it("narrows to one repo with --repo, and to the shared file for a repo at the workspace root", async () => {
+    await setup({ mode: "workspace", repos: { api: "api", main: "." }, checkedOut: ["api"] });
+
+    await expect(runJson(["--repo", "api"], "status")).resolves.toMatchObject({
+      result: { files: [{ scope: "repo", repo: "api", path: "api/.weave/coding-guidelines.md", status: "absent" }], missing_repos: [] },
+    });
+    await expect(runJson(["--repo", "main"], "status")).resolves.toMatchObject({
+      result: { files: [{ scope: "shared", path: ".weave/coding-guidelines.md" }] },
+    });
+    await expect(runJson(["--repo", "billing"], "status")).resolves.toMatchObject({ result: { status: "error", code: "repo_not_found" }, exitCode: 1 });
+  });
+
+  it("rejects --repo in repo mode", async () => {
+    await setup({ mode: "repo" });
+
+    await expect(runJson(["--repo", "api"], "status")).resolves.toMatchObject({ result: { status: "error", code: "invalid_arguments" }, exitCode: 1 });
   });
 });

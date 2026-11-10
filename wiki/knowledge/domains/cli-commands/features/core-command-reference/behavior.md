@@ -69,13 +69,13 @@ weave init --mode repo --yes
 What happens:
 
 - Weave creates `wiki/knowledge/`, `wiki/changes/`, `.weave/sync.yml`, and `.weave/architecture-considerations.md` if missing.
-- Weave writes the starter `.weave/coding-guidelines.md` if missing and lists it in `created`.
+- Weave does not write `.weave/coding-guidelines.md`. Its output ends with a "Coding guidelines" hint pointing to the `weave-coding-guidelines` skill, which drafts the file from the code.
 - Weave writes `.weave/workspace.yml` with `mode: repo` if missing.
 - Weave starts the current local session with the folder kind set to `app` by default.
 - Weave does not run `git init`.
 - Weave does not move files.
 - `.weave/architecture-considerations.md` is user-owned architecture guidance. Weave creates it once and never overwrites it.
-- `.weave/coding-guidelines.md` is the team's coding guidelines for code reviews. Only `weave init` and `weave review guidelines init` write it, only when absent; it is never overwritten.
+- `.weave/coding-guidelines.md` is the team's coding guidelines for code reviews. Only the `weave-coding-guidelines` skill and `weave review guidelines init` write it, only when absent; it is never overwritten.
 
 ### Workspace Mode In The Current Empty Directory
 
@@ -95,7 +95,7 @@ What happens:
 
 - The current directory becomes the workspace.
 - Weave initializes git in the current directory.
-- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, `.weave/coding-guidelines.md` (starter, shared by every repo), and `.weave/workspace.yml`.
+- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, and `.weave/workspace.yml`. It writes no coding guidelines file and prints the guidelines hint instead.
 - `.weave/workspace.yml` has `mode: workspace`.
 - The workspace has no registered repos yet.
 - Weave starts the current local session with `kind: workspace`.
@@ -117,7 +117,7 @@ What happens:
 - Weave creates the target workspace directory if it does not already exist.
 - Weave refuses unsafe existing target paths instead of overwriting user data.
 - Weave initializes git in the workspace directory.
-- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, `.weave/coding-guidelines.md` (starter, shared by every repo), and `.weave/workspace.yml`.
+- Weave creates `.gitignore`, `wiki/`, `.weave/sync.yml`, `.weave/architecture-considerations.md`, and `.weave/workspace.yml`. It writes no coding guidelines file and prints the guidelines hint instead.
 - Weave starts the current local session with `kind: workspace`.
 
 ### Workspace Mode From Inside A Git Repo
@@ -141,7 +141,7 @@ What happens:
 - Weave preserves dirty, staged, deleted, and untracked files because it does not run a clean-worktree guard.
 - Weave adds the adopted repo directory to the workspace `.gitignore`.
 - Weave registers the adopted repo in `.weave/workspace.yml`.
-- Weave writes the starter shared `.weave/coding-guidelines.md` at the workspace root; the adopted repo gets no repo-specific guidelines file.
+- Weave writes no coding guidelines file, at the workspace root or in the adopted repo, and prints the guidelines hint instead.
 - Weave starts the current local session with `kind: workspace`.
 
 After this command, the user should open the workspace path in their editor.
@@ -212,6 +212,8 @@ What happens for a **path outside the workspace**:
 - Weave refuses if the destination already exists.
 - If the destination path is not already registered, Weave then registers and gitignores it as above.
 - If the destination path is already registered but missing locally, Weave materializes the registered repo by moving the folder into that path and does not rewrite `.weave/workspace.yml` or `.gitignore`.
+
+After registering or materializing a repo that has no `.weave/coding-guidelines.md` of its own, the output ends with a "Coding guidelines" hint naming the repo id and the `weave-coding-guidelines` skill. Weave never writes the file here.
 
 What happens for a **git URL**:
 
@@ -459,6 +461,7 @@ weave review gate --change [--json]
 weave review skip --reason <text> [--json]
 weave review unskip [--json]
 weave review prune [--change <id>] [--json]
+weave review guidelines status [--repo <id>] [--json]
 weave review guidelines init [--repo <id>] [--json]
 ```
 
@@ -467,7 +470,8 @@ weave review guidelines init [--repo <id>] [--json]
 - `package` writes a review package under `.weave/tmp/reviews/` (git-ignored). Errors: `review_disabled` (workspace off, unless `--force`), `change_review_skipped`, `no_slices`, `slice_not_found`, `slice_not_ready` (unless `--partial`), `gate_failed` (`--change`, unless `--partial`), `round_not_started`, `round_limit`, `run_not_resumable`.
 - `record` validates and stores reviewer reports and resolutions. It exits 4 on `report_invalid` (nothing written) and 5 on `plan_finding_requires_person`; these exit codes are used by no other command.
 - `gate --change` exits 0 whether or not the final review may start; `pass` and `blocking` carry the answer.
-- `skip` needs `--reason` (`missing_reason`). `prune` and `guidelines init` need no active change.
+- `guidelines status` is read-only. It lists the shared file and each checked-out registered repo's file, each with `scope`, `repo`, `root`, `path`, and `present` or `absent`, plus `missing_repos`. `--repo <id>` narrows to one repo; a repo registered at the workspace root reports the shared file. Errors: `no_weave_context`, `invalid_arguments` (`--repo` in repo mode), `repo_not_found`.
+- `skip` needs `--reason` (`missing_reason`). `prune`, `guidelines status`, and `guidelines init` need no active change.
 
 `weave slice rollup [--slice <id>] [--all] [--check] [--json]` derives slice status and the dependency graph. Its JSON includes `ready_for_review` per slice and `ready_slices`; `--check` writes nothing and exits 1 when derived state is stale. See [task-slices](../../../change-workflow/features/task-slices/behavior.md).
 
@@ -676,10 +680,10 @@ Expected outcome: Weave recognizes that `billing` is registered but missing loca
 ## Source Anchors
 
 - `src/commands/init.ts`: defines `weave init` and its options (`--mode`, `--workspace-name`, `--workspace-path`, `--id`, `--kind`, `--yes`).
-- `src/lib/init-workspace.ts`: implements repo mode, workspace mode, current-repo adoption, workspace metadata, git initialization, and session updates. Uses `registerRepoIntoWorkspace` for adopted-repo registration. `seedGuidelines` writes the starter `.weave/coding-guidelines.md` (init only; not part of `ensureWeaveScaffold`).
-- `src/commands/review.ts` and `src/commands/review/*.ts`: the `weave review` command group; `src/lib/review/guidelines.ts`: guideline paths and starter text.
+- `src/lib/init-workspace.ts`: implements repo mode, workspace mode, current-repo adoption, workspace metadata, git initialization, and session updates. Uses `registerRepoIntoWorkspace` for adopted-repo registration. It writes no guidelines file; `initializedMessage` ends with `guidelinesHint()`.
+- `src/commands/review.ts` and `src/commands/review/*.ts`: the `weave review` command group; `src/lib/review/guidelines.ts`: guideline paths, the starter text, and `guidelinesHint`.
 - `src/commands/add.ts`: defines `weave add` and its options (`--id`, `--kind`).
-- `src/lib/add-folder.ts`: mode-aware add. Repo mode writes `session.folders`; workspace mode dispatches on URL vs path-inside vs path-outside and writes `workspace.yml.repos`.
+- `src/lib/add-folder.ts`: mode-aware add. Repo mode writes `session.folders`; workspace mode dispatches on URL vs path-inside vs path-outside and writes `workspace.yml.repos`; `withGuidelinesHint` adds the guidelines hint when the repo has no guidelines file.
 - `src/lib/workspace-mode.ts`: `findWorkspaceMode(cwd)` walks up looking for `.weave/workspace.yml` and reads `mode`. Shared by `weave add` and `weave workspace`.
 - `src/lib/workspace-repos.ts`: workspace.yml repos registry, idempotent `.gitignore` append (`/<path>/`), URL helpers (`isGitUrl` supports `git@`, `https://`, `http://`, `ssh://`, `git://`, `file://`), `registerRepoIntoWorkspace` (the single write path used by both init and add).
 - `src/lib/git.ts`: `cloneRepo` runs `git clone -- <url> <dest>` (the `--` separator is intentional to block URL-as-flag injection); `getGitRemote` reads `remote.origin.url`.
@@ -699,3 +703,4 @@ Expected outcome: Weave recognizes that `billing` is registered but missing loca
 - 2026-07-21 (change `260721-6d48-fix-init`): Cloned Weave workspaces now work without `weave init`. `weave init` is a safe no-op when `.weave/workspace.yml` already exists up the tree (no re-scaffold, no repo move, no session write). `weave add` in repo mode lazily creates a session containing only the target folder when no session exists. Repo-mode `weave workspace` with no session derives the workspace-root folder without writing. The `no_session` JSON status is renamed to `not_initialized` and is emitted only in the genuine uninitialized case.
 - 2026-11-10 (change `261109-479a-open-worktree-when-created`): `weave change new` and `switch` gained `--skill`, `--context`, `--open`, and `--no-open`; added `weave change open` and `weave settings open`.
 - 2026-11-10 (change `261110-g2wn-code-reviewers`): added the `weave review` command group and the workspace `review:` settings; `weave init` seeds the starter `.weave/coding-guidelines.md`; `weave slice rollup --json` reports `ready_for_review` and `ready_slices` and `--check` no longer writes.
+- 2026-11-10 (direct edit on main, decision `261110-gwl5`): `weave init` no longer seeds `.weave/coding-guidelines.md` and prints a hint for the `weave-coding-guidelines` skill instead; `weave add` prints the hint for a repo with no guidelines file; added `weave review guidelines status`.

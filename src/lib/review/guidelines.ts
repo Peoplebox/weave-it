@@ -99,6 +99,14 @@ export async function writeGuidelinesIfMissing(target: GuidelineTarget): Promise
   }
 }
 
+// Printed by `weave init` and by `weave add` for a repo with no guidelines file. Weave never drafts
+// the file from these commands; the weave-coding-guidelines skill does, from the code.
+export function guidelinesHint(repo?: string): string {
+  return repo === undefined
+    ? "Coding guidelines:\n  Run the weave-coding-guidelines skill in your agent to draft .weave/coding-guidelines.md from your code."
+    : `Coding guidelines:\n  Run the weave-coding-guidelines skill with ${repo} in your agent to draft this repo's .weave/coding-guidelines.md from its code.`;
+}
+
 export function repoGuidelinesTemplate(repo?: string): string {
   return `# Coding guidelines${repo ? `: ${repo}` : ""}\n`;
 }

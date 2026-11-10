@@ -30,6 +30,7 @@ const bundledSkillNames = [
   "weave-architect",
   "weave-capture",
   "weave-clarify",
+  "weave-coding-guidelines",
   "weave-execute",
   "weave-explore",
   "weave-fix",
@@ -441,6 +442,36 @@ describe("agent skills", () => {
     }
     for (const placeholder of briefPlaceholders) {
       expect(skill.content).toContain(`\`${placeholder}\``);
+    }
+  });
+
+  it("ships weave-coding-guidelines, which drafts only missing guidelines files through fresh writers", async () => {
+    const skill = await readDefaultSkill("weave-coding-guidelines");
+    const brief = await readFile(path.join(process.cwd(), "templates", "skills", "weave-coding-guidelines", "guidelines-writer-brief.md"), "utf8");
+
+    expect(skill.name).toBe("weave-coding-guidelines");
+    expect(skill.description).toContain("Never overwrites an existing file");
+    expect(skill.content).toContain("weave review guidelines status --json");
+    expect(skill.content).toContain("weave review guidelines status --repo <repo-id> --json");
+    expect(skill.content).toContain("`guidelines-writer-brief.md`");
+    expect(skill.content).toContain("Start all writers at once, in the foreground");
+    // Every placeholder the skill fills is one the brief uses, and the other way round.
+    const placeholders = ["{TARGET_PATH}", "{CODE_ROOT}", "{SCOPE}", "{REPO_ID}", "{OTHER_REPOS}", "{COMMIT}", "{DATE}", "{MODEL_LEVEL}"];
+    for (const placeholder of placeholders) {
+      expect(skill.content, placeholder).toContain(`\`${placeholder}\``);
+      expect(brief, placeholder).toContain(placeholder);
+    }
+    expect(new Set(brief.match(/\{[A-Z_]+\}/g))).toEqual(new Set(placeholders));
+    // The brief demands evidence, keeps disagreements as open questions, and never overwrites.
+    expect(brief).toContain("Each rule names at least one example path");
+    expect(brief).toContain("## Open questions");
+    expect(brief).toContain("check that it does not exist");
+    await expect(readFile(path.join(process.cwd(), "templates", "opencode", "commands", "weave-coding-guidelines.md"), "utf8")).resolves.toContain("`weave-coding-guidelines` skill");
+  });
+
+  it("tells reviewers to skip a guidelines file's open questions", async () => {
+    for (const brief of ["slice-reviewer-brief.md", "final-reviewer-brief.md"]) {
+      expect(await readReviewResource(brief), brief).toContain("A section headed **Open questions** lists conventions the team has not settled yet. Do not apply it");
     }
   });
 

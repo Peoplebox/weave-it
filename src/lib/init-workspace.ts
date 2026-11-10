@@ -8,7 +8,7 @@ import { findGitRoot, getGitRemote, runGitRequired } from "./git.js";
 import { slugify, titleFromSlug } from "./ids.js";
 import { loadCurrentSession, saveCurrentSession, createCurrentSession, defaultSessionPath } from "./session-state.js";
 import { ensureDecisionGuidance } from "./decisions.js";
-import { guidelinesFileName, writeGuidelinesIfMissing } from "./review/guidelines.js";
+import { guidelinesHint } from "./review/guidelines.js";
 import { ensureWeaveScaffold } from "./weave-scaffold.js";
 import { findWorkspaceMode } from "./workspace-mode.js";
 import { registerRepoIntoWorkspace, workspaceGitignoreBaseTemplate } from "./workspace-repos.js";
@@ -101,9 +101,6 @@ async function initRepoMode(
     kind: options.folderKind,
   });
   const scaffold = await ensureWeaveScaffold({ folder });
-  if ((await seedGuidelines(folder.path)) === "created") {
-    scaffold.created.push(guidelinesFileName);
-  }
   const workspaceMetadata = await writeRepoWorkspaceMetadata(folder);
   if (workspaceMetadata) {
     scaffold.created.push(".weave/workspace.yml");
@@ -400,9 +397,6 @@ async function scaffoldWorkspace(input: {
   const folder = workspaceFolder(input.workspacePath, input.workspaceName);
   const scaffold = await ensureWeaveScaffold({ folder });
   const created = [...scaffold.created];
-  if ((await seedGuidelines(input.workspacePath)) === "created") {
-    created.push(guidelinesFileName);
-  }
   if ((await ensureDecisionGuidance(input.workspacePath)) !== "unchanged") {
     created.push("AGENTS.md");
   }
@@ -440,12 +434,6 @@ async function scaffoldWorkspace(input: {
   }
 
   return created;
-}
-
-// Only `weave init` seeds the starter guidelines. `ensureWeaveScaffold` must not, because
-// `weave change new`, `weave doctor`, and `weave add` also call it on existing projects.
-async function seedGuidelines(rootPath: string): Promise<"created" | "unchanged"> {
-  return writeGuidelinesIfMissing({ path: path.join(rootPath, guidelinesFileName), scope: "shared" });
 }
 
 async function createInitialWorkspaceCommit(workspacePath: string): Promise<boolean> {
@@ -567,5 +555,7 @@ Session state:
   ${input.sessionPath}
 
 Next:
-  ${nextText}`;
+  ${nextText}
+
+${guidelinesHint()}`;
 }

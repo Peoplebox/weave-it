@@ -7,7 +7,8 @@ Code reviews check a change's code with fresh, independent reviewers before the 
 Two parts work together (decision `261110-dbm2`):
 
 - The **`weave-review` skill** holds every judgement: when to review, the three reviewer briefs, how findings are received, how many fix rounds to run, when to stop for a person, and which model level to use. The skill folder holds only markdown.
-- The **`weave review` command group** holds every mechanical step: snapshots, review packages, recording, the gate, switches, cleanup, and guideline seeding. It writes all review state. Agents never edit `status.yml`, `review.md`, or `review/` files by hand.
+- The **`weave review` command group** holds every mechanical step: snapshots, review packages, recording, the gate, switches, cleanup, and guidelines files (status and the generic starter). It writes all review state. Agents never edit `status.yml`, `review.md`, or `review/` files by hand.
+- The **`weave-coding-guidelines` skill** drafts missing coding guidelines files from the code (see **Drafting guidelines**).
 
 Weave never merges and sends no notifications. Review is not a lifecycle lane: it never enters `changeStages` and never marks lanes stale.
 
@@ -161,11 +162,25 @@ Reviewers start fresh (never a fork of the building conversation) and see only t
 
 ### Coding guidelines
 
-Guidelines live in `.weave/coding-guidelines.md` (decision `261110-dtld`): one shared file at the workspace root, and an optional file at each registered repo's root. Both apply to that repo's code and the repo file wins on conflict; the reviewer weighs them, the CLI only resolves files. A repo-mode project has one file. Packages read them from the change's own checkout folder, so a change's guideline edits apply to its own review. A missing file is listed as absent ("no shared guidelines found"); a registered repo with no checkout makes the package partial.
+Guidelines live in `.weave/coding-guidelines.md` (decisions `261110-dtld` and `261110-gwl5`): one shared file at the workspace root, and an optional file at each registered repo's root. Both apply to that repo's code and the repo file wins on conflict; the reviewer weighs them, the CLI only resolves files. A repo-mode project has one file. Packages read them from the change's own checkout folder, so a change's guideline edits apply to its own review. A missing file is listed as absent ("no shared guidelines found"); a registered repo with no checkout makes the package partial.
 
 A guidelines file can act as an index that links to more guideline files anywhere in its repo (for example one for models and one for controllers). The CLI still lists only the `.weave/coding-guidelines.md` files; following links is the reviewer's job. Slice and final reviewers read each listed file, follow its links (relative to the linking file) to the files that cover code in their diff, treat a more specific linked file as winning over the index that links to it, and cite the linked file in `fails.ref`. Each report has a **Guidelines read** section listing the files read and any linked file skipped or missing; a broken link is not a code finding. Fix checkers follow links to the files that cover the round diff. Only `.weave/coding-guidelines.md` edits go under a change package's "Plan and docs edits"; edits to linked files appear in the ordinary diff, and the final reviewer judges them as documents too.
 
-`weave init` writes the starter shared file when absent (sections for error handling, security, testing expectations, naming and structure, and documentation). `weave review guidelines init` writes it for existing projects; `--repo <id>` (workspace mode only) writes a heading-only repo file. Neither ever overwrites, and no other command (`weave change new`, `weave doctor`, `weave add`, `weave agent update`) creates the file.
+A section headed **Open questions** in a guidelines file lists conventions the team has not settled; slice and final reviewers do not apply it.
+
+#### Drafting guidelines
+
+No command seeds guidelines. `weave init` ends with a hint pointing to the `weave-coding-guidelines` skill, and `weave add` prints the same hint, naming the repo, when the added repo has no file. `weave review guidelines status` (read-only, no active change needed) reports which files are present or absent and which registered repos are not checked out.
+
+The `weave-coding-guidelines` skill drafts only absent files: all of them with no argument, one repo's file with a repo id, or the shared file with `shared`. When the named file exists, it stops and says so. It starts one fresh writer per missing file, all at once in the foreground, each on the `guidelines-writer-brief.md` brief. The level is `mid`, or `most_capable` for large or multi-language code and for the shared writer across three or more repos. Writers have three scopes:
+
+- `project`: the single file in repo mode.
+- `repo`: one registered repo.
+- `shared`: in workspace mode, only conventions that hold in every repo, plus how the repos work together.
+
+A writer reads in a fixed order: project docs and agent instruction files, tooling config, layout, two or three recent files per area, then tests. Each rule is a convention seen at least three times (or stated in the project's docs) and names an example path. Splits go under **Open questions**. Nothing a formatter, linter, or type checker already enforces, and nothing generic, is written. A file starts with a "Drafted by weave-coding-guidelines from commit … on …" comment and holds about 10 to 30 rules. Code with clearly separate areas may be split into `coding-guidelines-<topic>.md` files beside it, linked under **More guidelines**. Writers check that each file is absent immediately before writing it and never touch an existing file.
+
+The skill then checks each draft. It confirms the drafted-from line, spot-checks example paths (removing rules whose example is missing), confirms links resolve, and removes generic or tool-enforced lines. A draft that fails badly is redone once. When the agent cannot start sub-agents, the skill follows the brief itself and says so. `weave review guidelines init` still writes the generic starter shared file (sections for error handling, security, testing expectations, naming and structure, and documentation) or, with `--repo <id>`, a heading-only repo file, only when absent.
 
 ### Visibility
 
@@ -268,6 +283,7 @@ Per change: `weave review skip --reason "<why>"` and `weave review unskip`.
 
 - 2026-11-10 (change `261110-g2wn-code-reviewers`): introduced slice and final code reviews, the `weave-review` skill and briefs, the `weave review` command group, snapshot boundaries, review records, out-of-date detection, rulings with reopen, the final-review gate and verdicts, coding guidelines files, workspace review settings, and per-change skip.
 - 2026-11-10 (direct edit on main): guidelines files can link to more guideline files; reviewer briefs follow the links and list the files they read under **Guidelines read**.
+- 2026-11-10 (direct edit on main, decision `261110-gwl5`): added the `weave-coding-guidelines` skill and `weave review guidelines status`; `weave init` no longer seeds the starter and `weave add` hints at the skill; reviewers skip **Open questions**.
 
 ## Open Questions
 
