@@ -1,0 +1,15 @@
+version: 1
+id: 05-record-findings-and-finalize
+title: Record reviewer reports, rulings, and the finished slice review
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 04-slice-review-package
+task_summary:
+  total: 6
+  done: 6
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-10T00:42:45.963Z

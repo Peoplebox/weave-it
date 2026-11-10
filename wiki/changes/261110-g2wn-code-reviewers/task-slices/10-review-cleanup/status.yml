@@ -1,0 +1,15 @@
+version: 1
+id: 10-review-cleanup
+title: Clean up snapshot refs and packages for finished changes
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 04-slice-review-package
+task_summary:
+  total: 4
+  done: 4
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-10T00:35:49.963Z

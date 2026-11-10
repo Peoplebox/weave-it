@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
 metadata:
   author: weave-tools
-  last_changed_in: "0.1.11"
+  last_changed_in: "0.1.13"
 ---
 
 # Weave Execute
@@ -47,6 +47,9 @@ Do not say `Notices: ...`, `The command returned notices`, raw
 `notices[].message`, full notice JSON, or full skill lists unless the user
 asks for diagnostics.
 
+`skills_available`: suppress it unless `weave-review` is one of the missing skills. Then say:
+`Code reviews are available but the \`weave-review\` skill is not installed for <agent>. Run \`weave agent install <agent>\` to add it.`
+
 # Resolve Context
 
 Start with Tier 1 context commands:
@@ -67,6 +70,8 @@ wiki/changes/<change-id>/tasks.md       -> flat mode (legacy)
 ```
 
 **Slice mode:** read `task-slices/<slice-id>/tasks.md`. Accept `<slice-id> <task-id>` selectors (e.g. `/weave-execute 01 T1`). Enforce within-slice-only `Blocked by:` deps. Call `weave slice rollup --all --json` at episode boundaries (end, HITL pause, error exit).
+
+Choose slices from `ready_slices` in `weave slice rollup --all --json`; do not work out readiness from `depends_on` yourself. A selected slice whose `status` is `pending` must be listed in `ready_slices`. When it is not, name the `depends_on` slices that are holding it back (not done yet, or, while code review is active, not reviewed yet or waiting on a person) and stop before prepare. A slice already `in_progress` can continue.
 
 **Flat mode:** read change-root `tasks.md`. Use legacy selectors (`T#`, `all`, scope). Today's behavior unchanged.
 
@@ -199,6 +204,32 @@ Small tasks are where a deliberate decision is most easily undone by accident, b
 - If a task would conflict with an accepted decision, stop before changing that code and tell the user which decision conflicts and why. Continue only after they choose: change the approach, or propose a replacement with `weave adr new "<title>" --supersedes <id>`. Never overturn a decision quietly.
 - If a decision's `Reconsider When` condition seems to apply, say so. Do not act on it yourself.
 
+# Code Review Hook
+
+In slice mode, code review is part of finishing a slice. The `weave-review` skill does the reviewing; this skill only records where the slice started and hands over when it is done.
+
+Before the first task of a slice moves to `in_progress`, check whether review is active:
+
+```bash
+weave review status --slice <slice-id> --json
+```
+
+- `active: false`: review is off (`inactive_cause` says why). Skip every step in this section for the slice, and change nothing else about the run.
+- `active: true` and the slice's `status.yml` `status` is `pending` (no task has started yet): record the start snapshot before changing any file:
+
+  ```bash
+  weave review snapshot --slice <slice-id> --at start --json
+  ```
+
+  It keeps an existing start snapshot. When the slice is already `in_progress` and has no `review.start_ref`, do not take one: its review then measures from the change base, so the work done before this run is still reviewed.
+
+After the slice's last task in this run, run `weave slice rollup --all --json`. When review is active and the slice's entry in `slices[]` has `ready_for_review: true`, hand over in this session, in the foreground: load the `weave-review` skill and run its slice review for `<id>`; if you cannot load it by name, read it from one of `skill_paths`.
+
+- Wait for the review, its fix rounds, and its rulings to finish before starting another slice. Never run a review in the background.
+- When the review stops for a plan problem, the slice is `waiting_on_person`. End this run there: do not start another slice, and tell the user what the review says they must decide.
+- When the review finishes, run `weave slice rollup --all --json` again and take any next slice from `ready_slices`.
+- The review records its own fixes and rulings. Do not change task statuses because of them.
+
 # Execute Tasks
 
 Execute tasks in dependency order.
@@ -259,6 +290,7 @@ Finish with a grouped outcome summary:
 - skipped tasks, including `done`, `invalid`, or dependency-blocked tasks
 - prepare blockers, if any
 - verification commands or checks that passed, failed, or could not run
+- slice reviews handed to `weave-review` and their outcome, or that review was inactive
 - recorded decisions consulted, any conflicts, and any candidate ADRs. Run `weave adr check --json` and name every decision it reports as touched
 - next steps for anything unresolved
 

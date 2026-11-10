@@ -1,0 +1,15 @@
+version: 1
+id: 07-out-of-date-and-ruling-reopen
+title: Out-of-date reviews, file ownership, and reopened rulings
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 05-record-findings-and-finalize
+task_summary:
+  total: 5
+  done: 5
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-10T05:11:31.623Z

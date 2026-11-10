@@ -1,0 +1,15 @@
+version: 1
+id: 09-switches-and-status-visibility
+title: Review switches, status lines, and the reviews-available notice
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 08-final-review-and-gate
+task_summary:
+  total: 5
+  done: 5
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-10T05:55:00.791Z

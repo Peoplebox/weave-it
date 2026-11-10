@@ -566,6 +566,27 @@ describe("changes", () => {
     expect(status.message).toContain("Stress test (exploration): holds (outdated: shape changed since)");
   });
 
+  it("keeps a change review block through weave change verdict and progress", async () => {
+    const cwd = await tempDir();
+    const session = sessionPath(cwd);
+    const created = await createChange({ cwd, title: "Review block kept", now: testNow, randomId: () => "rv01", sessionPath: session });
+    const statusPath = path.join(cwd, "wiki", "changes", created.id, "status.yml");
+    const review = {
+      adopted_at: "2026-11-10T00:00:00.000Z",
+      state: "in_progress",
+      latest_run: "f1",
+      skipped: { reason: "docs only", at: "2026-11-10T00:00:00.000Z" },
+      counts: { open_rulings: 1, parked_items: 2, plan_problems_open: 0 },
+    };
+    await writeFile(statusPath, YAML.stringify({ ...YAML.parse(await readFile(statusPath, "utf8")), review }));
+
+    await progressChange({ cwd, stage: "exploration", sources: ["discussion"], sessionPath: session, now: testNow });
+    expect(YAML.parse(await readFile(statusPath, "utf8")).review).toEqual(review);
+
+    await verdictChange({ cwd, lane: "exploration", verdict: "holds", sessionPath: session, now: testNow });
+    expect(YAML.parse(await readFile(statusPath, "utf8")).review).toEqual(review);
+  });
+
   it("records a waived stress test only with a reason", async () => {
     const cwd = await tempDir();
     const session = sessionPath(cwd);

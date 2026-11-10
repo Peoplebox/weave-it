@@ -1,0 +1,16 @@
+version: 1
+id: 04-slice-review-package
+title: Slice review package
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 02-snapshot-boundaries
+  - 03-coding-guidelines
+task_summary:
+  total: 5
+  done: 5
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-10T00:25:36.154Z

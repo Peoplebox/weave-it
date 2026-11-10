@@ -38,6 +38,48 @@ export async function withStateLock<T>(mainRoot: string, action: (stateDir: stri
   }
 }
 
+// The lock directory that serialises review and rollup writes for one change. Every worktree of
+// a repo resolves the same directory. Undefined when the folder is not inside a git repo.
+export async function changeLockPath(mainRoot: string, changeId: string): Promise<string | undefined> {
+  const common = await gitCommonDir(mainRoot);
+  if (!common) {
+    return undefined;
+  }
+  return path.join(common, "weave", "locks", `change-${changeId}`);
+}
+
+// Runs `action` while holding the per-change lock. Outside a git repo there is no shared state
+// folder, so the action runs without a lock rather than creating a `.git` folder.
+export async function withChangeLock<T>(mainRoot: string, changeId: string, action: () => Promise<T>): Promise<T> {
+  const lock = await changeLockPath(mainRoot, changeId);
+  if (!lock) {
+    return action();
+  }
+  await mkdir(path.dirname(lock), { recursive: true });
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await mkdir(lock);
+      break;
+    } catch (error) {
+      const age = await stat(lock).then((info) => Date.now() - info.mtimeMs).catch(() => 0);
+      if (age > 30_000) {
+        await rm(lock, { recursive: true, force: true });
+      } else if (attempt >= 100) {
+        throw new ChangeCommandError("change_locked", `Another Weave command is updating change ${changeId}. Try again.`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+  }
+  try {
+    return await action();
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
+}
+
 // Writes through a temp file and a rename, so readers never see a half-written file.
 export async function writeFileAtomic(file: string, content: string): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });

@@ -16,6 +16,15 @@ import {
   EXPECTED_LIFECYCLE_SYNC_PROTOCOL,
   EXPECTED_SILENT_COMMAND_OUTPUT,
 } from "../src/lib/skill-template-checks.js";
+import {
+  extractReport,
+  isFixCheckReport,
+  renderChangeReviewRecord,
+  renderReviewRecord,
+  validateFixCheckReport,
+  validateReport,
+  type RunRecord,
+} from "../src/lib/review/record.js";
 
 const bundledSkillNames = [
   "weave-architect",
@@ -31,9 +40,32 @@ const bundledSkillNames = [
   "weave-prd",
   "weave-questions",
   "weave-research",
+  "weave-review",
   "weave-slices",
   "weave-stress-test",
 ] as const;
+
+const reviewResources = [
+  "slice-reviewer-brief.md",
+  "fix-check-brief.md",
+  "final-reviewer-brief.md",
+  "review-record-template.md",
+] as const;
+
+const reviewBriefs = ["slice-reviewer-brief.md", "fix-check-brief.md", "final-reviewer-brief.md"] as const;
+
+const briefPlaceholders = ["{PACKAGE_PATH}", "{SCOPE}", "{SLICE_OR_CHANGE_DOCS}", "{MODEL_LEVEL}", "{ROUND}"] as const;
+
+async function readReviewResource(name: string): Promise<string> {
+  return readFile(path.join(process.cwd(), "templates", "skills", "weave-review", name), "utf8");
+}
+
+// The headings of each fenced block in a markdown file, in order.
+function fencedHeadings(markdown: string): string[][] {
+  return [...markdown.matchAll(/^```md\n([\s\S]*?)^```$/gm)].map((match) =>
+    match[1].split("\n").filter((line) => /^#{1,3} /.test(line)),
+  );
+}
 
 const researchSubagentNames = [
   "weave-analyzer",
@@ -375,6 +407,200 @@ describe("agent skills", () => {
     expect(skill.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
+  it("ships weave-review as the code review skill that drives every weave review command", async () => {
+    const skill = await readDefaultSkill("weave-review");
+
+    expect(skill.name).toBe("weave-review");
+    expect(skill.description).toContain("Use when");
+    for (const command of [
+      "weave review status --slice <id> --json",
+      "weave review status --change --json",
+      "weave review gate --change --json",
+      "weave review package --slice <id> --json",
+      "weave review package --change --json",
+      "weave review package --run <slice-id>/<latest_run> --json",
+      "weave review record --run <run-id> --report - --json < <response-file>",
+      "weave review record --run <run-id> --failed --json",
+      "weave review snapshot --run <run> --at round-start --round <N> --json",
+      "weave review package --run <run> --fix-round <N> --json",
+      "weave review record --run <run> --resolve <finding-id> --as fixed --round <N> --json",
+      "weave review record --run <run> --resolve <finding-id> --as parked --json",
+      'weave review record --run <run> --resolve <finding-id> --as ruling --agreed <true|false> --reason "<reasoning>" --cost "<cost if this ruling is wrong>" --json',
+      "weave review record --run <run> --resolve <finding-id> --as dismissed --by <name>",
+      "weave review record --run <run> --finalize --json",
+      "weave review snapshot --run <run> --at round-start --round 1 --json",
+      "weave review package --run <run> --fix-round 1 --json",
+      "`--independent false`",
+      "`--partial`",
+      "`settings.slice_rounds`",
+    ]) {
+      expect(skill.content, command).toContain(command);
+    }
+    for (const brief of reviewBriefs) {
+      expect(skill.content).toContain(`\`${brief}\``);
+    }
+    for (const placeholder of briefPlaceholders) {
+      expect(skill.content).toContain(`\`${placeholder}\``);
+    }
+  });
+
+  it("makes weave-review stop for a person on plan problems and keep fixes inside the slice", async () => {
+    const { content } = await readDefaultSkill("weave-review");
+
+    expect(content).toContain("# Plan Problems Always Stop");
+    expect(content).toContain("Do not fix, build, or rule on it, and do not try another `--as` on it.");
+    expect(content).toContain("`plan_finding_requires_person` (exit 5), that is expected: stop and explain. Never retry.");
+    expect(content).toContain("Never run `--as dismissed` yourself");
+    expect(content).toContain('weave adr new "<title>" --supersedes <id>');
+    expect(content).toContain("`weave-clarify`");
+    expect(content).toContain("Fix only files the slice owns");
+    expect(content).toContain("Do not fix Minor findings in slice rounds. Park each one for the final review");
+    expect(content).toContain("Clarify everything unclear before fixing anything.");
+    expect(content).toContain("`Unclear, not acted on:`");
+    expect(content).toContain("**Nothing unused.**");
+    expect(content).toContain("**No performative agreement.**");
+    expect(content).toContain("There is exactly one fix batch and one check.");
+    expect(content).toContain("Never run a review in the background");
+    expect(content).toContain("Never edit `status.yml`, `review.md`, or anything under `review/` by hand");
+  });
+
+  it("makes weave-review state a model level on every hand-over, with a row per supported agent", async () => {
+    const { content } = await readDefaultSkill("weave-review");
+
+    expect(content).toContain("State the model level on every hand-over. Never leave it to the session default.");
+    expect(content).toContain("Never below `mid`.");
+    expect(content).toContain("Never above `mid`.");
+    expect(content).toContain("| Final review | `most_capable`, always. |");
+    expect(content).toContain("| `claude` | `haiku` | `sonnet` | `opus` |");
+    for (const agent of ["codex", "cursor", "opencode"]) {
+      expect(content).toMatch(new RegExp(`^\\| \`${agent}\` \\|`, "m"));
+    }
+    expect(content).toContain("`settings.models.<agent>.<level>`");
+    expect(content).toContain("Hand the filled brief to a fresh reviewer sub-agent with your agent's own sub-agent tool");
+    expect(content).toContain("`skills_available`: suppress it unless `weave-review` is one of the missing skills.");
+  });
+
+  it("ships weave-review briefs with every placeholder, the reviewer rules, and a JSON example the CLI accepts", async () => {
+    for (const brief of reviewBriefs) {
+      const text = await readReviewResource(brief);
+      for (const placeholder of briefPlaceholders) {
+        expect(text, `${brief} ${placeholder}`).toContain(placeholder);
+      }
+      expect(text, brief).toContain("**Read-only.**");
+      expect(text, brief).toContain("**No sub-agents.**");
+      expect(text, brief).toContain("**No `weave` commands.**");
+      expect(text, brief).toMatch(/\*\*(Evidence is a claim|Claims are not proof)\.\*\*/);
+      expect(text, brief).toContain("`code` or `plan`");
+      expect(text, brief).toContain("**End with the JSON block.**");
+      expect(text.trimEnd().endsWith("```"), `${brief} ends with its JSON block`).toBe(true);
+    }
+
+    const slice = await readReviewResource("slice-reviewer-brief.md");
+    expect(slice).toContain("**Judge only the slice's own files.**");
+    expect(slice).toContain("Possibly another slice's work");
+    expect(slice).toContain("From main (ignore)");
+    expect(slice).toContain("Settled rulings (do not raise again)");
+    expect(slice).toContain("the repo's file wins");
+    const sliceReport = validateReport(extractReport(slice), { repos: ["root"] });
+    expect(sliceReport.ok).toBe(true);
+    expect(sliceReport.ok && sliceReport.report.final_only).toBeUndefined();
+
+    const check = await readReviewResource("fix-check-brief.md");
+    const checkJson = extractReport(check);
+    expect(isFixCheckReport(checkJson)).toBe(true);
+    expect(validateFixCheckReport(checkJson, { repos: ["root"] }).ok).toBe(true);
+
+    const final = await readReviewResource("final-reviewer-brief.md");
+    expect(final).toContain("`final_only.minor_sort`");
+    expect(final).toContain("`wiki/knowledge/`");
+    const finalReport = validateReport(extractReport(final), { repos: ["root"] });
+    expect(finalReport.ok).toBe(true);
+    expect(finalReport.ok && finalReport.report.final_only?.minor_sort.length).toBeGreaterThan(0);
+  });
+
+  it("documents the review.md layout with the same headings that weave review record writes", async () => {
+    const template = await readReviewResource("review-record-template.md");
+    const [sliceBlock, changeBlock] = fencedHeadings(template);
+    const run: RunRecord = {
+      run: "02-api/r1",
+      scope: { kind: "slice", slice: "02-api" },
+      independent: true,
+      partial: false,
+      model_level: "mid",
+      start_ref: null,
+      end_ref: "refs/weave/reviews/c/02-api/r1/end",
+      reports: [],
+      strengths: [],
+      findings: [],
+      declined: [],
+      verdict: null,
+      tasks: { total: 1, untested: [], human_checks: [] },
+      recorded_at: "2026-11-10T00:00:00.000Z",
+      updated_at: "2026-11-10T00:00:00.000Z",
+    };
+    const headings = (text: string): string[] => text.split("\n").filter((line) => /^#{1,3} /.test(line));
+    // Run ids and names differ between a rendered record and the template's placeholders.
+    const placeholder = (line: string): string => line.replace(/^(# Review record:|## Run) .*$/, "$1");
+
+    expect(headings(renderReviewRecord([run])).map(placeholder)).toEqual(sliceBlock.map(placeholder));
+
+    const changeRun: RunRecord = { ...run, run: "change/f1", scope: { kind: "change" } };
+    const changeText = renderChangeReviewRecord([changeRun], { changeId: "c", rulings: { settled: [], reopened: [] } });
+    const rendered = headings(changeText).map(placeholder);
+    expect(rendered.filter((line) => /^#{1,2} /.test(line))).toEqual(changeBlock.map(placeholder));
+    expect(rendered).toContain("### Minor sort");
+    expect(template).toContain("### Minor sort");
+  });
+
+  it("installs weave-review with its four resources for every agent", async () => {
+    for (const agent of ["claude", "codex", "cursor", "opencode"] as const) {
+      const cwd = await tempDir();
+      const install = await installAgentSkills({ cwd, agent });
+      const dir = agent === "claude" ? ".claude/skills" : ".agents/skills";
+
+      expect(install.results).toContainEqual(expect.objectContaining({ agent, kind: "skill", skill: "weave-review", status: "installed" }));
+      await expect(stat(path.join(cwd, dir, "weave-review", "SKILL.md"))).resolves.toMatchObject({});
+      for (const resource of reviewResources) {
+        expect(install.results).toContainEqual(
+          expect.objectContaining({ agent, kind: "resource", skill: `weave-review/${resource}`, status: "installed" }),
+        );
+        await expect(readFile(path.join(cwd, dir, "weave-review", resource), "utf8")).resolves.toBe(await readReviewResource(resource));
+      }
+      if (agent === "opencode") {
+        await expect(readFile(path.join(cwd, ".opencode", "commands", "weave-review.md"), "utf8")).resolves.toContain(
+          "Load and follow the `weave-review` skill.",
+        );
+      }
+      const manifest = (await readManifest(cwd)) as { installed: Record<string, { skills: Record<string, unknown> }> };
+      expect(Object.keys(manifest.installed[agent].skills)).toContain("weave-review");
+    }
+  });
+
+  it("hooks weave-execute into code review and weave-next into review recommendations", async () => {
+    const execute = (await readDefaultSkill("weave-execute")).content;
+    expect(execute).toContain("# Code Review Hook");
+    expect(execute).toContain("weave review status --slice <slice-id> --json");
+    expect(execute).toContain("weave review snapshot --slice <slice-id> --at start --json");
+    expect(execute).toContain(
+      "load the `weave-review` skill and run its slice review for `<id>`; if you cannot load it by name, read it from one of `skill_paths`",
+    );
+    expect(execute).toContain("`active: false`: review is off");
+    expect(execute).toContain("Wait for the review, its fix rounds, and its rulings to finish before starting another slice.");
+    expect(execute).toContain("`waiting_on_person`. End this run there");
+    expect(execute).toContain("Choose slices from `ready_slices`");
+    expect(execute).toContain("`ready_for_review: true`");
+
+    const next = (await readDefaultSkill("weave-next")).content;
+    expect(next).toContain("`ready_slices` in `weave slice rollup --all --check --json`");
+    expect(next).toContain("Do not compute the ready set from `depends_on` yourself");
+    expect(next).not.toContain("compute ready set from `depends_on`");
+    expect(next).toContain("Code review recommendation");
+    expect(next).toContain("run `weave-review slice <id>`");
+    expect(next).toContain("run `weave-review change` for the final review");
+    expect(next).toContain("`waiting_on_person` -> a plan problem is waiting for the person");
+    expect(next).toContain("`final.out_of_date` (verdict out of date)");
+  });
+
   it("keeps repo-installed Weave skill copies aligned for artifact capture flow", async () => {
     for (const skill of ["weave-explore", "weave-prd", "weave-architect", "weave-capture", "weave-next", "weave-clarify", "weave-slices", "weave-knowledge", "weave-prepare", "weave-execute"]) {
       const template = stripVolatileSkillMetadata(await readFile(path.join(process.cwd(), "templates", "skills", skill, "SKILL.md"), "utf8"));
@@ -672,6 +898,7 @@ describe("agent skills", () => {
       "weave-research",
       "weave-explore",
       "weave-stress-test",
+      "weave-review",
     ] as const;
     for (const skill of notPlanModeRequired) {
       const templatePath = path.join(process.cwd(), "templates", "skills", skill, "SKILL.md");
@@ -1130,6 +1357,38 @@ describe("agent skills", () => {
     expect(manifest.installed.codex.resources["weave-prd/prd-template.md"]).toMatchObject({
       path: ".agents/skills/weave-prd/prd-template.md",
     });
+  });
+
+  it("never creates resource files for a skill the agent has not installed during update", async () => {
+    const cwd = await tempDir();
+    const templatesDir = path.join(cwd, "templates", "skills");
+    const prdDir = path.join(templatesDir, "weave-prd");
+    await mkdir(prdDir, { recursive: true });
+    await writeFile(prdDir + "/SKILL.md", "---\nname: weave-prd\ndescription: Original\nlast_changed_in: 0.1.0\n---\n\nOriginal\n");
+
+    await installAgentSkills({ cwd, agent: "codex", templatesDir });
+
+    const reviewDir = path.join(templatesDir, "weave-review");
+    await mkdir(reviewDir, { recursive: true });
+    await writeFile(reviewDir + "/SKILL.md", "---\nname: weave-review\ndescription: New\nlast_changed_in: 0.2.0\n---\n\nNew\n");
+    await writeFile(reviewDir + "/brief.md", "Brief\n");
+    await writeFile(prdDir + "/prd-template.md", "Introduced PRD template\n");
+
+    const update = await updateAgentSkills({ cwd, agent: "codex", templatesDir });
+    const manifest = (await readManifest(cwd)) as {
+      installed: { codex: { skills: Record<string, unknown>; resources?: Record<string, unknown> } };
+    };
+
+    expect(update.results).toContainEqual(
+      expect.objectContaining({ kind: "resource", skill: "weave-review/brief.md", status: "missing" }),
+    );
+    expect(update.results).toContainEqual(
+      expect.objectContaining({ kind: "resource", skill: "weave-prd/prd-template.md", status: "installed" }),
+    );
+    await expect(stat(path.join(cwd, ".agents", "skills", "weave-review"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(manifest.installed.codex.skills["weave-review"]).toBeUndefined();
+    expect(manifest.installed.codex.resources?.["weave-review/brief.md"]).toBeUndefined();
+    expect(manifest.installed.codex.resources?.["weave-prd/prd-template.md"]).toBeDefined();
   });
 
   it("resets modified skills only when explicitly requested", async () => {

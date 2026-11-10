@@ -9,7 +9,7 @@ import {
   loadAgentsManifest,
 } from "./agent-skills.js";
 
-export type NoticeKind = "package_outdated" | "skills_outdated" | "skills_modified";
+export type NoticeKind = "package_outdated" | "skills_outdated" | "skills_modified" | "skills_available";
 
 export interface NoticeSkillRef {
   agent: AgentName;
@@ -76,7 +76,42 @@ export async function gatherNotices(options: GatherNoticesOptions): Promise<Noti
     });
   }
 
+  const available = await detectAvailableSkills({ cwd: options.cwd, templatesDir: options.templatesDir });
+  const agents = Object.keys(available) as AgentName[];
+  if (agents.length > 0) {
+    const missing = agents.map((agent) => `${agent}: ${available[agent]!.join(", ")}`).join("; ");
+    const commands = agents.map((agent) => `'weave agent install ${agent}'`).join(" and ");
+    notices.push({
+      kind: "skills_available",
+      message: `Bundled skills not installed for ${missing}. Run ${commands} to add them.`,
+      details: { agents: available },
+    });
+  }
+
   return notices;
+}
+
+// Bundled skills that a configured agent (one whose manifest entry already holds skills) has not
+// installed, by agent. Empty without a manifest, or when every agent has every bundled skill.
+export async function detectAvailableSkills(options: {
+  cwd: string;
+  templatesDir?: string;
+}): Promise<Partial<Record<AgentName, string[]>>> {
+  let manifest: AgentsManifest;
+  try {
+    manifest = await loadAgentsManifest(options.cwd);
+  } catch {
+    return {};
+  }
+  const bundled = (await safeListDefaultSkills(options.templatesDir)).map((skill) => skill.name);
+  const available: Partial<Record<AgentName, string[]>> = {};
+  for (const agent of (Object.keys(manifest.installed) as AgentName[]).sort()) {
+    const installed = manifest.installed[agent]?.skills ?? {};
+    if (Object.keys(installed).length === 0) continue;
+    const missing = bundled.filter((name) => !(name in installed)).sort();
+    if (missing.length > 0) available[agent] = missing;
+  }
+  return available;
 }
 
 export interface SkillDrift {

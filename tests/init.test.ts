@@ -1,13 +1,16 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import { addFolder } from "../src/lib/add-folder.js";
-import { currentChange } from "../src/lib/changes.js";
+import { updateAgentSkills } from "../src/lib/agent-skills.js";
+import { createChange, currentChange } from "../src/lib/changes.js";
+import { buildDoctor } from "../src/lib/doctor.js";
 import { initWorkspace } from "../src/lib/init-workspace.js";
+import { starterGuidelines } from "../src/lib/review/guidelines.js";
 import { loadCurrentSession } from "../src/lib/session-state.js";
 import { showWorkspace } from "../src/lib/show-workspace.js";
 
@@ -56,6 +59,8 @@ describe("current session workflow", () => {
     await expect(stat(path.join(cwd, ".weave", "sync.yml"))).resolves.toMatchObject({});
     await expect(stat(path.join(cwd, ".weave", "architecture-considerations.md"))).resolves.toMatchObject({});
     await expect(stat(path.join(cwd, ".weave", "workspace.yml"))).resolves.toMatchObject({});
+    await expect(readFile(path.join(cwd, ".weave", "coding-guidelines.md"), "utf8")).resolves.toBe(starterGuidelines());
+    expect(result.message).toContain(".weave/coding-guidelines.md");
     await expect(stat(path.join(cwd, ".git"))).rejects.toThrow();
     await expect(stat(path.join(cwd, "weave"))).rejects.toThrow();
     await expect(stat(path.join(cwd, ".weave", "local.yml"))).rejects.toThrow();
@@ -109,6 +114,7 @@ describe("current session workflow", () => {
     const syncFile = path.join(metadataDir, "sync.yml");
     const architectureConsiderations = path.join(metadataDir, "architecture-considerations.md");
     const workspaceFile = path.join(metadataDir, "workspace.yml");
+    const guidelinesFile = path.join(metadataDir, "coding-guidelines.md");
     await mkdir(path.join(wikiDir, "domains"), { recursive: true });
     await mkdir(path.join(wikiDir, "shared"), { recursive: true });
     await mkdir(metadataDir, { recursive: true });
@@ -119,6 +125,7 @@ describe("current session workflow", () => {
     await writeFile(syncFile, "existing: true\n");
     await writeFile(architectureConsiderations, "existing architecture notes\n");
     await writeFile(workspaceFile, "existing: true\n");
+    await writeFile(guidelinesFile, "# Our rules\n");
 
     const result = await initWorkspace({ cwd, interactive: false, yes: true, sessionPath });
 
@@ -130,6 +137,47 @@ describe("current session workflow", () => {
     await expect(readFile(syncFile, "utf8")).resolves.toBe("existing: true\n");
     await expect(readFile(architectureConsiderations, "utf8")).resolves.toBe("existing architecture notes\n");
     await expect(readFile(workspaceFile, "utf8")).resolves.toBe("existing: true\n");
+    await expect(readFile(guidelinesFile, "utf8")).resolves.toBe("# Our rules\n");
+  });
+
+  it("keeps an edited coding guidelines file when weave init runs again", async () => {
+    const cwd = await tempDir();
+    const sessionPath = path.join(cwd, ".cache", "current-session.yml");
+    const guidelinesFile = path.join(cwd, ".weave", "coding-guidelines.md");
+
+    await initWorkspace({ cwd, interactive: false, yes: true, sessionPath });
+    await writeFile(guidelinesFile, "# Our rules\n- Prefer small functions.\n");
+    const again = await initWorkspace({ cwd, interactive: false, yes: true, sessionPath });
+
+    expect(again.status).toBe("already_initialized");
+    await expect(readFile(guidelinesFile, "utf8")).resolves.toBe("# Our rules\n- Prefer small functions.\n");
+  });
+
+  it("does not seed coding guidelines in an existing project from weave change new, doctor, add, or agent update", async () => {
+    const root = await tempDir();
+    const cwd = path.join(root, "app");
+    const other = path.join(root, "other");
+    const sessionPath = path.join(root, ".cache", "current-session.yml");
+    const guidelinesFile = path.join(cwd, ".weave", "coding-guidelines.md");
+    await mkdir(cwd);
+    await mkdir(other);
+    await git(cwd, ["init", "-q"]);
+    await initWorkspace({ cwd, interactive: false, yes: true, folderId: "app", sessionPath });
+    // An existing project: initialised before guidelines existed.
+    await rm(guidelinesFile);
+    await git(cwd, ["add", "-A"]);
+    await git(cwd, ["commit", "-q", "-m", "Initialize Weave"]);
+
+    const change = await createChange({ cwd, title: "Guidelines regression", randomId: () => "gr01", sessionPath });
+    expect(change.folder).toBeTruthy();
+    await expect(stat(path.join(change.folder ?? cwd, ".weave", "coding-guidelines.md"))).rejects.toThrow();
+    await buildDoctor({ cwd, sessionPath });
+    await buildDoctor({ cwd, fix: true, sessionPath });
+    await addFolder({ cwd, targetPath: "../other", folderId: "other", sessionPath });
+    await updateAgentSkills({ cwd, agent: "all" });
+
+    await expect(stat(guidelinesFile)).rejects.toThrow();
+    await expect(stat(path.join(other, ".weave", "coding-guidelines.md"))).rejects.toThrow();
   });
 
   it("initializes workspace mode outside a git repo", async () => {
@@ -159,6 +207,8 @@ describe("current session workflow", () => {
     await expect(stat(path.join(workspacePath, "wiki", "changes"))).resolves.toMatchObject({});
     await expect(stat(path.join(workspacePath, ".weave", "sync.yml"))).resolves.toMatchObject({});
     await expect(stat(path.join(workspacePath, ".weave", "architecture-considerations.md"))).resolves.toMatchObject({});
+    await expect(readFile(path.join(workspacePath, ".weave", "coding-guidelines.md"), "utf8")).resolves.toBe(starterGuidelines());
+    expect(result.message).toContain(".weave/coding-guidelines.md");
     expect(workspace).toMatchObject({
       version: 1,
       mode: "workspace",
@@ -204,6 +254,9 @@ describe("current session workflow", () => {
     await expect(stat(path.join(movedRepo, ".git"))).resolves.toMatchObject({});
     await expect(readFile(path.join(movedRepo, "src", "dirty.txt"), "utf8")).resolves.toBe("not committed\n");
     expect(gitignore).toContain("/app-repo/");
+    await expect(readFile(path.join(workspacePath, ".weave", "coding-guidelines.md"), "utf8")).resolves.toBe(starterGuidelines());
+    await expect(stat(path.join(movedRepo, ".weave", "coding-guidelines.md"))).rejects.toThrow();
+    expect(result.message).toContain(".weave/coding-guidelines.md");
     expect(workspace.repos["app-repo"]).toMatchObject({
       path: "app-repo",
       kind: "app",

@@ -490,7 +490,9 @@ async function updateArtifact(
   const entry = getManifestEntry(manifest, agent, artifact.kind, artifact.name);
 
   if (!(await pathExists(artifact.destination))) {
-    if (!entry && artifact.kind === "resource") {
+    // A resource new to an installed skill is added; update never creates files for a skill
+    // this agent has not installed.
+    if (!entry && artifact.kind === "resource" && getManifestEntry(manifest, agent, "skill", owningSkillName(artifact.name))) {
       await ensureDir(dirname(artifact.destination));
       await writeFile(artifact.destination, artifact.content);
       setManifestEntry(manifest, agent, artifact, relativePath, now);
@@ -563,6 +565,10 @@ function getManifestEntry(
 ): ManifestEntry | undefined {
   const entries = manifest.installed[agent];
   return entries?.[manifestBucketForKind(kind)]?.[name];
+}
+
+function owningSkillName(resourceName: string): string {
+  return resourceName.split("/")[0] ?? resourceName;
 }
 
 function resolveAgentTargets(cwd: string, agent: AgentSelection): ConcreteTarget[] {

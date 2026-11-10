@@ -4,11 +4,25 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import YAML from "yaml";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { joinOrRunRefresh, planBackgroundRefresh, readRefresh, runRefresh, type RefreshRecord } from "../src/lib/change-refresh.js";
 import { createChange, listChanges } from "../src/lib/changes.js";
 import { pathExists } from "../src/lib/files.js";
 import { noPromptEnv } from "../src/lib/git.js";
+
+// Lets a test make the refresh's review prune throw; otherwise the real prune runs.
+const pruneControl = vi.hoisted(() => ({ fail: false, calls: 0 }));
+vi.mock("../src/lib/review/prune.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/review/prune.js")>();
+  return {
+    ...actual,
+    pruneReviews: async (...args: Parameters<typeof actual.pruneReviews>) => {
+      pruneControl.calls += 1;
+      if (pruneControl.fail) throw new Error("prune exploded");
+      return actual.pruneReviews(...args);
+    },
+  };
+});
 
 const execFileAsync = promisify(execFile);
 const gitEnv = {
@@ -81,6 +95,8 @@ async function listWith(f: Fixture, record?: RefreshRecord, refreshing = false) 
 
 beforeEach(() => {
   process.env.WEAVE_NO_BACKGROUND_REFRESH = "1";
+  pruneControl.fail = false;
+  pruneControl.calls = 0;
 });
 
 afterEach(() => {
@@ -258,5 +274,38 @@ describe("background refresh", () => {
 
     const snapshot = JSON.parse(await readFile(path.join(f.stateDir, "attention.json"), "utf8"));
     expect(snapshot).toMatchObject({ total: 1, counts: { landed: 1 } });
+  });
+
+  it("prunes a landed change's review refs after its landed check, keeping open changes' refs", async () => {
+    const f = await fixture();
+    const landed = await landedChange(f);
+    const open = await createChange({ cwd: f.repo, title: "Open", randomId: () => "o1o1", sessionPath: f.session });
+    for (const id of [landed.id, open.id]) {
+      await git(f.repo, ["update-ref", `refs/weave/reviews/${id}/01-slice/start`, "HEAD"]);
+    }
+
+    await runRefresh(f.repo);
+
+    expect(pruneControl.calls).toBe(1);
+    expect(await git(f.repo, ["for-each-ref", "--format=%(refname)", "refs/weave/reviews/"])).toBe(`refs/weave/reviews/${open.id}/01-slice/start`);
+    expect(await git(f.repo, ["for-each-ref", "--format=%(refname)", "refs/weave/remotes/origin/main"])).toBe("refs/weave/remotes/origin/main");
+  });
+
+  it("finishes the refresh and writes the attention snapshot when prune throws", async () => {
+    const f = await fixture();
+    const landed = await landedChange(f);
+    await git(f.repo, ["update-ref", `refs/weave/reviews/${landed.id}/01-slice/start`, "HEAD"]);
+    pruneControl.fail = true;
+
+    const run = await runRefresh(f.repo);
+
+    expect(pruneControl.calls).toBe(1);
+    expect(run.outcome).toBe("claimed");
+    expect(run.record.running).toBeNull();
+    expect(run.record.repos.root).toMatchObject({ result: "ok", seen: [landed.branch] });
+    expect(await readRefresh(f.stateDir)).toEqual(run.record);
+    const snapshot = JSON.parse(await readFile(path.join(f.stateDir, "attention.json"), "utf8"));
+    expect(snapshot).toMatchObject({ total: 1, counts: { landed: 1 } });
+    expect(await git(f.repo, ["for-each-ref", "--format=%(refname)", "refs/weave/reviews/"])).toBe(`refs/weave/reviews/${landed.id}/01-slice/start`);
   });
 });

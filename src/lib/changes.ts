@@ -10,6 +10,7 @@ import { writeAttention } from "./change-attention.js";
 import { ChangeCommandError } from "./change-error.js";
 import { gatherFacts, resolveMainRoot, type GatheredChange, type RemoteFacts } from "./change-facts.js";
 import { remoteFacts, type RefreshRecord } from "./change-refresh.js";
+import type { ChangeStatusReviewView } from "./review/summary.js";
 import { attentionCounts, deriveState, nextLine, stateLine, type ChangeView } from "./change-states.js";
 import { pathExists } from "./files.js";
 import { findGitRoot, listGitWorktrees } from "./git.js";
@@ -213,6 +214,8 @@ export interface ChangeSummary {
   created_at?: string;
   updated_at?: string;
   active: boolean;
+  // `weave change status` only: the code-review summary, absent when there is none to show.
+  review?: ChangeStatusReviewView;
 }
 
 // What `weave change list` reports per change in worktree mode: today's fields, plus the
@@ -817,10 +820,24 @@ export async function statusChange(options: StatusChangeOptions): Promise<Status
     });
   }
 
+  // Loaded on demand: the review modules import back into this one.
+  const { changeStatusReview, renderChangeReviewLines } = await import("./review/summary.js");
+  const { reviewContextForChangePath } = await import("./review/state.js");
+  const reviewLines = new Map<StatusChangeTargetResult, string[]>();
+  for (const result of results) {
+    if (result.change) {
+      const review = await changeStatusReview(
+        reviewContextForChangePath(result.change.changePath) ?? { weaveRoot: result.path, changeId: result.change.id, changePath: result.change.changePath },
+      );
+      if (review) result.change.review = review;
+      reviewLines.set(result, renderChangeReviewLines(review));
+    }
+  }
+
   return {
     status: "ok",
     targets: results,
-    message: formatStatusMessage(results),
+    message: formatStatusMessage(results, reviewLines),
   };
 }
 
@@ -2593,15 +2610,15 @@ function formatCurrentTarget(target: CurrentChangeTargetResult): string {
   ].join("\n");
 }
 
-function formatStatusMessage(targets: StatusChangeTargetResult[]): string {
+function formatStatusMessage(targets: StatusChangeTargetResult[], reviewLines: Map<StatusChangeTargetResult, string[]> = new Map()): string {
   if (targets.length === 0) {
     return "No workspace folders found.";
   }
 
-  return targets.map(formatStatusTarget).join("\n\n");
+  return targets.map((target) => formatStatusTarget(target, reviewLines.get(target) ?? [])).join("\n\n");
 }
 
-function formatStatusTarget(target: StatusChangeTargetResult): string {
+function formatStatusTarget(target: StatusChangeTargetResult, reviewLines: string[] = []): string {
   const heading = target.name ? `${target.name} (${target.path})` : target.path;
   if (target.mismatch) {
     return [
@@ -2623,6 +2640,7 @@ function formatStatusTarget(target: StatusChangeTargetResult): string {
     `Stage: ${target.change.stage}`,
     ...formatStaleLines(target.change.stale),
     ...formatStressTestLines(target.change.stress_tests),
+    ...reviewLines,
     ...formatAutoAdvanceLines(target.change.auto_advance),
     ...formatRunLines(target.change.runs),
     ...formatKnowledgeLines(target.change.knowledge),

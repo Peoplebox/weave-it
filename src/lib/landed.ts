@@ -141,7 +141,7 @@ async function hasOriginRemote(repoPath: string): Promise<boolean> {
   return (await runGit(["remote", "get-url", "origin"], repoPath)).ok;
 }
 
-async function resolveTarget(
+export async function resolveTarget(
   repoPath: string,
   branch: string,
   hasOrigin: boolean,

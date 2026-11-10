@@ -1,8 +1,11 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import YAML from "yaml";
 import { describe, expect, it } from "vitest";
+import { readSliceReview, reviewContextForChangePath, updateSliceReview, type ReviewContext } from "../src/lib/review/state.js";
 import {
   deriveSliceStatus,
   detectDependencyCycles,
@@ -169,5 +172,213 @@ describe("sliceRollup", () => {
     ]);
     expect(cycles).not.toBeNull();
     expect(cycles?.length).toBeGreaterThan(0);
+  });
+});
+
+const execFileAsync = promisify(execFile);
+
+function taskTable(statuses: string[]): string {
+  return [
+    "# Tasks",
+    "",
+    "## Active Task Index",
+    "",
+    "| ID | Status | Execution | Repos | Owner | Title | Blocked by |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...statuses.map((status, index) => `| T${index + 1} | ${status} | afk | root | | Task ${index + 1} | None |`),
+    "",
+  ].join("\n");
+}
+
+function statusYaml(id: string, dependsOn: string[] = []): string {
+  return YAML.stringify({
+    version: 1,
+    id,
+    title: id,
+    status: "pending",
+    owner: "",
+    repos: ["root"],
+    depends_on: dependsOn,
+    task_summary: { total: 0, done: 0, blocked: 0 },
+    created_at: "2026-11-01T00:00:00.000Z",
+    updated_at: "2026-11-01T00:00:00.000Z",
+  });
+}
+
+// A change laid out as <root>/wiki/changes/<id> inside a git repo, with slice 02 depending on 01.
+async function reviewFixture(options: { reviewInstalled: boolean; alpha?: string[]; beta?: string[] }): Promise<{
+  root: string;
+  changePath: string;
+  ctx: ReviewContext;
+  setTasks: (slice: string, statuses: string[]) => Promise<void>;
+}> {
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "weave-rollup-review-")));
+  await execFileAsync("git", ["init", "-q"], { cwd: root });
+  await mkdir(path.join(root, ".weave"), { recursive: true });
+  await writeFile(path.join(root, ".weave", "workspace.yml"), YAML.stringify({ version: 1, mode: "repo", name: "fixture", repos: {} }));
+  if (options.reviewInstalled) {
+    await writeFile(
+      path.join(root, ".weave", "agents.yml"),
+      YAML.stringify({
+        version: 1,
+        installed: { claude: { skills: { "weave-review": { path: ".claude/skills/weave-review/SKILL.md" } } } },
+      }),
+    );
+  }
+  const changePath = path.join(root, "wiki", "changes", "261110-roll-review");
+  await mkdir(changePath, { recursive: true });
+  await writeFile(path.join(changePath, "status.yml"), YAML.stringify({ id: "261110-roll-review", stage: "slices" }));
+  const setTasks = async (slice: string, statuses: string[]) => {
+    await writeFile(path.join(changePath, "task-slices", slice, "tasks.md"), taskTable(statuses));
+  };
+  for (const [slice, deps, statuses] of [
+    ["01-alpha", [], options.alpha ?? ["todo"]],
+    ["02-beta", ["01-alpha"], options.beta ?? ["todo"]],
+  ] as const) {
+    await mkdir(path.join(changePath, "task-slices", slice), { recursive: true });
+    await writeFile(path.join(changePath, "task-slices", slice, "status.yml"), statusYaml(slice, [...deps]));
+    await setTasks(slice, [...statuses]);
+  }
+  const ctx = reviewContextForChangePath(changePath);
+  if (!ctx) {
+    throw new Error("fixture context");
+  }
+  return { root, changePath, ctx, setTasks };
+}
+
+describe("sliceRollup review state", () => {
+  it("keeps a hand-written review block and reports no change on --check", async () => {
+    const { changePath } = await reviewFixture({ reviewInstalled: false, alpha: ["done"] });
+    const alphaStatus = path.join(changePath, "task-slices", "01-alpha", "status.yml");
+    await rollupChange({ changePath });
+    const review = { state: "reviewed", latest_run: "r2", counts: { open_rulings: 1 }, custom: ["kept"] };
+    await writeFile(alphaStatus, `${await readFile(alphaStatus, "utf8")}${YAML.stringify({ review })}`);
+    const before = await readFile(alphaStatus, "utf8");
+
+    const check = await rollupChange({ changePath, check: true });
+    expect(check.status).toBe("ok");
+    expect(check.slices.every((slice) => !slice.changed)).toBe(true);
+
+    await rollupChange({ changePath });
+    expect(await readFile(alphaStatus, "utf8")).toBe(before);
+    expect(YAML.parse(await readFile(alphaStatus, "utf8")).review).toEqual(review);
+
+    // A task change still rewrites the slice and still carries the block.
+    await writeFile(path.join(changePath, "task-slices", "01-alpha", "tasks.md"), taskTable(["done", "todo"]));
+    const rolled = await rollupChange({ changePath });
+    expect(rolled.slices.find((slice) => slice.sliceId === "01-alpha")?.changed).toBe(true);
+    expect(YAML.parse(await readFile(alphaStatus, "utf8")).review).toEqual(review);
+  });
+
+  it("never rewrites a malformed review block", async () => {
+    const { changePath } = await reviewFixture({ reviewInstalled: true, alpha: ["done"] });
+    const alphaStatus = path.join(changePath, "task-slices", "01-alpha", "status.yml");
+    await writeFile(alphaStatus, `${await readFile(alphaStatus, "utf8")}review: hand note\n`);
+    await rollupChange({ changePath });
+    expect(YAML.parse(await readFile(alphaStatus, "utf8")).review).toBe("hand note");
+  });
+
+  it("reports ready_for_review for not_tested tasks while status stays in_progress", async () => {
+    const { changePath } = await reviewFixture({ reviewInstalled: false, alpha: ["done", "not_tested"] });
+    const result = await rollupChange({ changePath });
+    const alpha = result.slices.find((slice) => slice.sliceId === "01-alpha");
+    expect(alpha?.metadata.status).toBe("in_progress");
+    expect(alpha?.ready_for_review).toBe(true);
+    expect(result.slices.find((slice) => slice.sliceId === "02-beta")?.ready_for_review).toBe(false);
+  });
+
+  it("with review active, waits for the dependency to be reviewed", async () => {
+    const { changePath, ctx, setTasks } = await reviewFixture({ reviewInstalled: true });
+    // First rollup adopts the change while nothing is ready, so nothing predates review.
+    expect((await rollupChange({ changePath })).ready_slices).toEqual(["01-alpha"]);
+
+    await setTasks("01-alpha", ["done", "done"]);
+    const unreviewed = await rollupChange({ changePath });
+    expect(unreviewed.slices.find((slice) => slice.sliceId === "01-alpha")?.metadata.status).toBe("done");
+    expect(unreviewed.ready_slices).toEqual([]);
+    const graph = await readFile(path.join(changePath, "task-slices", "dependency-graph.md"), "utf8");
+    expect(graph).toContain("| 02-beta | 01-alpha | blocked |");
+    expect(graph).toContain("With code review on");
+
+    await updateSliceReview(ctx, "01-alpha", () => ({ state: "reviewed" }));
+    const reviewed = await rollupChange({ changePath });
+    expect(reviewed.ready_slices).toEqual(["02-beta"]);
+    expect(await readFile(path.join(changePath, "task-slices", "dependency-graph.md"), "utf8")).toContain("| 02-beta | 01-alpha | ready |");
+  });
+
+  it("adopts on the first active rollup, so a slice done before then predates review", async () => {
+    const { changePath } = await reviewFixture({ reviewInstalled: true, alpha: ["done"] });
+    const result = await rollupChange({ changePath });
+    expect(result.ready_slices).toEqual(["02-beta"]);
+    expect((await readSliceReview(path.join(changePath, "task-slices", "01-alpha", "status.yml")))?.state).toBe("predates_review");
+  });
+
+  it("does not adopt on --check", async () => {
+    const { changePath } = await reviewFixture({ reviewInstalled: true, alpha: ["done"] });
+    await rollupChange({ changePath, check: true });
+    expect(YAML.parse(await readFile(path.join(changePath, "status.yml"), "utf8")).review).toBeUndefined();
+  });
+
+  it("with review inactive, a done dependency is enough", async () => {
+    const { changePath } = await reviewFixture({ reviewInstalled: false, alpha: ["done"] });
+    const result = await rollupChange({ changePath });
+    expect(result.ready_slices).toEqual(["02-beta"]);
+    const graph = await readFile(path.join(changePath, "task-slices", "dependency-graph.md"), "utf8");
+    expect(graph).not.toContain("With code review on");
+    expect(YAML.parse(await readFile(path.join(changePath, "status.yml"), "utf8")).review).toBeUndefined();
+  });
+});
+
+describe("sliceRollup review regressions", () => {
+  it("keeps every review write and every rollup field when both run concurrently", async () => {
+    const { changePath, ctx, setTasks } = await reviewFixture({ reviewInstalled: false, alpha: ["todo", "todo"] });
+    const alphaStatus = path.join(changePath, "task-slices", "01-alpha", "status.yml");
+    await setTasks("01-alpha", ["done", "in_progress"]);
+
+    for (let round = 0; round < 10; round += 1) {
+      await Promise.all([
+        rollupChange({ changePath }),
+        updateSliceReview(ctx, "01-alpha", (current) => ({ ...(current ?? {}), [`write_${round}`]: round })),
+        rollupChange({ changePath, slicePath: "01-alpha" }),
+      ]);
+    }
+
+    const status = YAML.parse(await readFile(alphaStatus, "utf8")) as Record<string, unknown>;
+    expect(status).toMatchObject({
+      id: "01-alpha",
+      status: "in_progress",
+      task_summary: { total: 2, done: 1, blocked: 0 },
+      depends_on: [],
+      repos: ["root"],
+    });
+    const review = status.review as Record<string, unknown>;
+    for (let round = 0; round < 10; round += 1) {
+      expect(review[`write_${round}`]).toBe(round);
+    }
+  });
+
+  it("gates a dependent slice on review only while review is active", async () => {
+    for (const reviewInstalled of [false, true]) {
+      const { changePath, ctx, setTasks } = await reviewFixture({ reviewInstalled });
+      await rollupChange({ changePath });
+      await setTasks("01-alpha", ["done"]);
+      const done = await rollupChange({ changePath });
+      const graph = await readFile(path.join(changePath, "task-slices", "dependency-graph.md"), "utf8");
+      if (!reviewInstalled) {
+        expect(done.ready_slices).toEqual(["02-beta"]);
+        expect(graph).toContain("| 02-beta | 01-alpha | ready |");
+        continue;
+      }
+      expect(done.ready_slices).toEqual([]);
+      expect(graph).toContain("| 02-beta | 01-alpha | blocked |");
+
+      for (const state of ["in_review", "waiting_on_person", "review_failed"] as const) {
+        await updateSliceReview(ctx, "01-alpha", () => ({ state }));
+        expect((await rollupChange({ changePath })).ready_slices).toEqual([]);
+      }
+      await updateSliceReview(ctx, "01-alpha", () => ({ state: "reviewed" }));
+      expect((await rollupChange({ changePath })).ready_slices).toEqual(["02-beta"]);
+      expect(await readFile(path.join(changePath, "task-slices", "dependency-graph.md"), "utf8")).toContain("| 02-beta | 01-alpha | ready |");
+    }
   });
 });

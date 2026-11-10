@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires the weave CLI (npm package @weave-tools/weave-it) on PATH, run inside a git repo or workspace initialised with weave init.
 metadata:
   author: weave-tools
-  last_changed_in: "0.1.9"
+  last_changed_in: "0.1.13"
 ---
 
 # Weave Next
@@ -83,7 +83,7 @@ wiki/changes/<change-id>/task-slices/dependency-graph.md
 wiki/changes/<change-id>/findings.md
 ```
 
-**Dual mode:** when `task-slices/` exists, walk slice `status.yml` files, compute ready set from `depends_on`, and suggest next slice + task (bias toward critical-path slices). Support `/weave-next afk` to surface ready `Execution: afk` tasks across slices. When only flat `tasks.md` exists, use legacy flat-mode recommendations.
+**Dual mode:** when `task-slices/` exists, read the slices that may start from `ready_slices` in `weave slice rollup --all --check --json` (the `--check` form writes nothing; its `ready_slices` is current even when it reports `check_failed`). Do not compute the ready set from `depends_on` yourself: while code review is active, a dependency counts only once it is reviewed. Walk slice `status.yml` files for progress, and suggest the next slice + task from `ready_slices` or the slices already `in_progress` (bias toward critical-path slices). Support `/weave-next afk` to surface ready `Execution: afk` tasks across slices. When only flat `tasks.md` exists, use legacy flat-mode recommendations.
 
 Architecture may be legacy file mode or folder mode. If `architecture/` exists, treat `architecture/index.md` as the entry point and direct child facet files as part of the architecture lane. If both `architecture.md` and `architecture/` exist, mention the conflict before recommending the next step.
 
@@ -194,6 +194,19 @@ When resume and forward recommendations differ, make the resume command primary 
 
 When there is no valid resume context, make the type-aware recommendation primary.
 
+Code review recommendation (from `targets[0].change.review` in `weave change status --json`, and `weave review gate --change --json`):
+
+- `review` absent, or `active: false` -> make no review recommendation. When `inactive_cause` is `change_skipped`, mention that review was skipped for this change.
+- `review.unreadable` -> say the review state could not be read, with its `error`, and that `weave review status --repair` rebuilds it.
+- A slice whose `effective_state` is `waiting_on_person` -> a plan problem is waiting for the person (the slice owner, or whoever is working on the change). Say which slice, that its `review.md` names the finding, and the two ways to resolve it: change the plan (`weave-clarify`, or `weave adr new "<title>" --supersedes <id>` for a decision), or dismiss it with `weave review record --run <run> --resolve <finding-id> --as dismissed --by <name>` and then run `weave-review slice <id>`. Slices that do not depend on it can still be built.
+- A slice whose `effective_state` is `not_reviewed` (tasks done, not reviewed) -> run `weave-review slice <id>`.
+- A slice that is out of date (`effective_state` `out_of_date`, or `out_of_date_reasons` not empty) -> run `weave-review slice <id>` again, naming the reasons (code changed, plan changed, tasks added).
+- A slice that is `review_failed` or `in_review` -> run `weave-review slice <id>`; it resumes the run or starts a new one.
+- The gate returns `pass: true` with no `reason`, and `final.state` is `not_started` -> run `weave-review change` for the final review.
+- `final.out_of_date` (verdict out of date) -> run `weave-review change` again, naming `final.out_of_date_reasons`.
+- `final.verdict` set and current -> no review step; report the verdict and its parked items, rulings, and plan problems from `final.counts`.
+- A review recommendation comes before starting another slice and before `weave-knowledge`; a stale lane still comes first. Never run `weave-review` or any `weave review` command that writes from this skill.
+
 Auto-advance recommendation (from `weave advance --dry-run --json` and `weave change runs --json`):
 
 - A `running` run for the lane you would recommend -> say that phase is already running (run id, skill, started time, and where: a sub-agent of the session that handed it off for a `handoff` run, its `where` for a terminal session, or `weave change run log <run-id> --follow` for a background one) and recommend waiting for it; never recommend starting it again.
@@ -233,6 +246,8 @@ In `Current Change`, include change id, title when available, target repo or rep
 In `Artifact State`, summarize `questions.md` and `research.md` when present, then `exploration.md` (with PRD Readiness), `prd.md`, the architecture artifact (with Slices Readiness), and slice or task evidence.
 
 In `Artifact State`, also summarize knowledge status when `status.yml.knowledge` is present, and each stress test verdict when `status.yml.stress_tests` is present (say when one is outdated), and any proposed decisions waiting for confirmation.
+
+In `Artifact State`, also summarize code review when `review` is present in `weave change status --json`: each slice's review state (for example `slice 02 reviewed (1 ruling)`, `slice 03 waiting on you: plan problem`), the final review state, and the verdict.
 
 In `Artifact State`, also name the auto-advance transitions that are on and the latest run when `status.yml.runs` is present.
 
@@ -280,3 +295,6 @@ Notice handling:
 Do not say `Notices: ...`, `The command returned notices`, raw
 `notices[].message`, full notice JSON, or full skill lists unless the user
 asks for diagnostics.
+
+`skills_available`: suppress it unless `weave-review` is one of the missing skills. Then say:
+`Code reviews are available but the \`weave-review\` skill is not installed for <agent>. Run \`weave agent install <agent>\` to add it.`

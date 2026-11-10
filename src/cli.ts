@@ -6,6 +6,7 @@ import { agentCommand } from "./commands/agent.js";
 import { changeCommand } from "./commands/change.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { initCommand } from "./commands/init.js";
+import { reviewCommand } from "./commands/review.js";
 import { skillCommand, skillsCommand } from "./commands/skills.js";
 import { statusCommand } from "./commands/status.js";
 import { settingsCommand } from "./commands/settings.js";
@@ -48,6 +49,7 @@ export function createProgram(): Command {
   program.addCommand(statusCommand());
   program.addCommand(taskCommand());
   program.addCommand(sliceCommand());
+  program.addCommand(reviewCommand());
   program.addCommand(settingsCommand());
 
   return program;

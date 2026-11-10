@@ -49,6 +49,8 @@ Files:
 
 - Automated tests: <command>
 - Manual/smoke check: <steps>
+- Human check: <step a person must do>
+<!-- Optional. Only for steps an agent cannot perform; reviews list each one as "needs your check". -->
 
 ## QA Findings
 

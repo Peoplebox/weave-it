@@ -1,0 +1,15 @@
+version: 1
+id: 02-snapshot-boundaries
+title: Snapshot boundaries and the diff base
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 01-readiness-rules-and-rollup
+task_summary:
+  total: 4
+  done: 4
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-10T00:09:45.712Z

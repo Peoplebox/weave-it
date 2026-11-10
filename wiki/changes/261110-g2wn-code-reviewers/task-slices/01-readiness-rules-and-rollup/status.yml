@@ -1,0 +1,14 @@
+version: 1
+id: 01-readiness-rules-and-rollup
+title: Review readiness rules, preserved review state, and weave review status
+status: done
+owner: ""
+repos:
+  - root
+depends_on: []
+task_summary:
+  total: 6
+  done: 6
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-09T23:59:13.889Z

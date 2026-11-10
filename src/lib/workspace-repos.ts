@@ -42,8 +42,54 @@ export type WorkspaceMetadata = {
   advanceLaunch?: AdvanceLaunchSetting;
   advanceAgent?: string;
   advanceCommand?: string;
+  // Code review switches (`review:`). Filled with defaults by `readWorkspaceMetadata`.
+  review?: ReviewSettings;
   repos: Record<string, WorkspaceRepoEntry>;
 };
+
+// Model names per level for one agent, for example `{ cheap: haiku, mid: sonnet, most_capable: opus }`.
+export type ReviewModelLevels = { cheap?: string; mid?: string; most_capable?: string };
+
+export type ReviewSettings = {
+  // Absent means true. False turns automatic reviews off.
+  enabled: boolean;
+  // Fix rounds per slice review. Absent means 2.
+  slice_rounds: number;
+  // Optional per-agent model levels; the review skill's own table applies otherwise.
+  models: Record<string, ReviewModelLevels>;
+};
+
+export const defaultReviewSliceRounds = 2;
+
+export function defaultReviewSettings(): ReviewSettings {
+  return { enabled: true, slice_rounds: defaultReviewSliceRounds, models: {} };
+}
+
+export function parseReviewSettings(value: unknown): ReviewSettings {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const rounds = record.slice_rounds;
+  const models: Record<string, ReviewModelLevels> = {};
+  if (record.models && typeof record.models === "object" && !Array.isArray(record.models)) {
+    for (const [agent, levels] of Object.entries(record.models as Record<string, unknown>)) {
+      if (!levels || typeof levels !== "object" || Array.isArray(levels)) {
+        continue;
+      }
+      const entry: ReviewModelLevels = {};
+      for (const level of ["cheap", "mid", "most_capable"] as const) {
+        const model = (levels as Record<string, unknown>)[level];
+        if (typeof model === "string" && model.trim()) {
+          entry[level] = model.trim();
+        }
+      }
+      models[agent] = entry;
+    }
+  }
+  return {
+    enabled: record.enabled !== false,
+    slice_rounds: typeof rounds === "number" && Number.isInteger(rounds) && rounds >= 0 ? rounds : defaultReviewSliceRounds,
+    models,
+  };
+}
 
 export const advanceLaunchSettings = ["handoff", "here", "terminal", "background"] as const;
 export type AdvanceLaunchSetting = (typeof advanceLaunchSettings)[number];
@@ -105,6 +151,7 @@ export async function readWorkspaceMetadata(workspacePath: string): Promise<Work
       checkout: parsed.checkout === "worktree" ? "worktree" : "in-place",
       worktrees: parseWorktreeSettings(parsed.worktrees),
       ...parseAdvance(parsed.advance),
+      review: parseReviewSettings(parsed.review),
       repos,
     };
   } catch {

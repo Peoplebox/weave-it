@@ -1,0 +1,15 @@
+version: 1
+id: 11-review-skill-and-execute-hook
+title: The weave-review skill, the execute hook, and next-step recommendations
+status: done
+owner: ""
+repos:
+  - root
+depends_on:
+  - 09-switches-and-status-visibility
+task_summary:
+  total: 5
+  done: 5
+  blocked: 0
+created_at: 2026-11-09T23:35:06.000Z
+updated_at: 2026-11-10T06:14:25.879Z

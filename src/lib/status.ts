@@ -11,6 +11,7 @@ import { gatherNotices, type Notice } from "./notices.js";
 import { getNpmVersionInfo } from "./npm-version.js";
 import { findWorkspaceMode } from "./workspace-mode.js";
 import { readWorkspaceMetadata } from "./workspace-repos.js";
+import { shortChangeReviewLine, type ChangeStatusReviewView } from "./review/summary.js";
 
 const agentOrder: AgentName[] = ["claude", "codex", "cursor", "opencode"];
 
@@ -37,9 +38,14 @@ export interface StatusResult {
   skills: StatusSkillRow[];
   // null when nothing has been worked out yet, or the repo doesn't use change folders.
   changes_attention: ChangesAttention | null;
+  // The code-review summary of the change the current folder resolves; null outside a change,
+  // or when there is no review data to show.
+  review: StatusReview | null;
   notices: Notice[];
   message: string;
 }
+
+export type StatusReview = { change: string } & ChangeStatusReviewView;
 
 export interface BuildStatusOptions {
   cwd: string;
@@ -54,6 +60,7 @@ export async function buildStatus(options: BuildStatusOptions): Promise<StatusRe
   const inRepo = await pathExists(join(options.cwd, ".weave", "agents.yml"));
   const skills = inRepo ? await collectSkillRows(options) : [];
   const changesAttention = await readChangesAttention(options.cwd);
+  const review = await readActiveChangeReview(options.cwd);
   const npmLatest =
     options.npmLatest === undefined
       ? (await getNpmVersionInfo({ packageVersion, env: options.env })).cachedLatest
@@ -73,6 +80,7 @@ export async function buildStatus(options: BuildStatusOptions): Promise<StatusRe
     inRepo,
     skills,
     changes_attention: changesAttention,
+    review,
     notices,
     message: renderStatusMessage({
       packageVersion,
@@ -80,6 +88,7 @@ export async function buildStatus(options: BuildStatusOptions): Promise<StatusRe
       inRepo,
       skills,
       changesAttention,
+      review,
       notices,
       npmLatest: npmLatest ?? null,
     }),
@@ -97,6 +106,21 @@ export async function readChangesAttention(cwd: string): Promise<ChangesAttentio
     const mainRoot = (await mainWorktreePath(found.workspacePath)) ?? found.workspacePath;
     const snapshot = await readAttention(await localStateDir(mainRoot));
     return snapshot ? { total: snapshot.total, counts: snapshot.counts, computed_at: snapshot.computed_at } : null;
+  } catch {
+    return null;
+  }
+}
+
+// The review summary of the change the current folder resolves. Never throws: anything that
+// goes wrong resolving the change gives null, and unreadable review data gives `unreadable`.
+export async function readActiveChangeReview(cwd: string): Promise<StatusReview | null> {
+  try {
+    const { activeChangeContext } = await import("./changes.js");
+    const { reviewContextFromActive } = await import("./review/state.js");
+    const { changeStatusReview } = await import("./review/summary.js");
+    const ctx = reviewContextFromActive(await activeChangeContext({ cwd }));
+    const review = await changeStatusReview(ctx);
+    return review ? { change: ctx.changeId, ...review } : null;
   } catch {
     return null;
   }
@@ -163,6 +187,7 @@ function renderStatusMessage(opts: {
   inRepo: boolean;
   skills: StatusSkillRow[];
   changesAttention: ChangesAttention | null;
+  review: StatusReview | null;
   notices: Notice[];
   npmLatest: string | null;
 }): string {
@@ -208,6 +233,11 @@ function renderStatusMessage(opts: {
   if (attention) {
     lines.push("");
     lines.push(attention);
+  }
+
+  if (opts.review) {
+    lines.push("");
+    lines.push(`Review (${opts.review.change}): ${shortChangeReviewLine(opts.review)}`);
   }
 
   lines.push("");

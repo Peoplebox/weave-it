@@ -1,18 +1,20 @@
 // The background refresh of remote facts (ADR 261108-4ko1). `weave change list` answers
 // from what is already known, then starts at most one detached `weave change refresh`,
 // which fetches each repo into `refs/weave/remotes/origin/*`, records what it saw in
-// `.git/weave/refresh.json`, and rewrites the attention snapshot for `weave status`.
+// `.git/weave/refresh.json`, rewrites the attention snapshot for `weave status`, and prunes
+// review snapshot refs of changes that have landed or no longer exist.
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { writeAttention } from "./change-attention.js";
 import { listBaseChangeIds, readBases } from "./change-bases.js";
-import { gatherFacts, repoSources, resolveMainRoot, type RemoteFacts } from "./change-facts.js";
+import { gatherFacts, repoSources, resolveMainRoot, type GatherResult, type RemoteFacts } from "./change-facts.js";
 import { attentionCounts, deriveState, type RefreshResult } from "./change-states.js";
 import { pathExists } from "./files.js";
 import { deleteRef, fetchNoPrompt, hasOrigin, lsRemoteHeads, resolveDefaultBase, runGit, weaveRemoteRefPrefix } from "./git.js";
 import { targetBranchName } from "./landed.js";
 import { localStateDir, withStateLock, writeFileAtomic } from "./local-state.js";
+import { pruneReviews } from "./review/prune.js";
 import { readWorkspaceMetadata } from "./workspace-repos.js";
 
 export const refreshTimeoutPerRepoMs = 30_000;
@@ -193,12 +195,22 @@ export async function runRefresh(rootPath: string, options: RefreshOptions & { t
     return latest;
   });
 
+  let gathered: GatherResult | undefined;
   try {
-    const gathered = await gatherFacts(mainRoot, { remote: remoteFacts(record) });
+    gathered = await gatherFacts(mainRoot, { remote: remoteFacts(record) });
     const counts = attentionCounts(gathered.changes.map((change) => deriveState(change.facts)));
     await writeAttention(mainRoot, { ...counts, factsAt: gathered.factsAt });
   } catch {
     // The snapshot is a convenience; the next list writes it again.
+  }
+  if (gathered) {
+    try {
+      // Review snapshot refs and packages of landed or vanished changes, reusing the landed
+      // results just gathered. Local git only: no network, no prompts.
+      await pruneReviews(mainRoot, { facts: gathered });
+    } catch {
+      // Cleanup is best effort; the next refresh tries again.
+    }
   }
   return { outcome, record };
 }

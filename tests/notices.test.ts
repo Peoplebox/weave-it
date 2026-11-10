@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 import { installAgentSkills } from "../src/lib/agent-skills.js";
-import { detectSkillDrift, gatherNotices, isNewerVersion } from "../src/lib/notices.js";
+import { detectAvailableSkills, detectSkillDrift, gatherNotices, isNewerVersion } from "../src/lib/notices.js";
 
 async function tempDir(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "weave-notices-"));
@@ -158,6 +159,70 @@ describe("notices", () => {
 
     expect(drift.modified.map((entry) => entry.name)).toEqual(["weave-explore"]);
     expect(drift.outdated.map((entry) => entry.name)).toEqual(["weave-capture"]);
+  });
+
+  it("emits one skills_available notice naming a bundled skill a configured agent has not installed", async () => {
+    const cwd = await tempDir();
+    await installAgentSkills({ cwd, agent: "claude" });
+    const manifestPath = path.join(cwd, ".weave", "agents.yml");
+    const manifest = YAML.parse(await readFile(manifestPath, "utf8")) as { installed: { claude: { skills: Record<string, unknown> } } };
+    delete manifest.installed.claude.skills["weave-explore"];
+    await writeFile(manifestPath, YAML.stringify(manifest));
+
+    const notices = await gatherNotices({ cwd, packageVersion: "0.1.0", npmLatest: "0.1.0", env: {} as NodeJS.ProcessEnv });
+    const available = notices.filter((notice) => notice.kind === "skills_available");
+    expect(available).toEqual([
+      {
+        kind: "skills_available",
+        message: "Bundled skills not installed for claude: weave-explore. Run 'weave agent install claude' to add them.",
+        details: { agents: { claude: ["weave-explore"] } },
+      },
+    ]);
+  });
+
+  it("lists every agent that is missing bundled skills in the one notice", async () => {
+    const cwd = await tempDir();
+    const templatesDir = path.join(cwd, "templates", "skills");
+    for (const name of ["weave-capture", "weave-review"]) {
+      await mkdir(path.join(templatesDir, name), { recursive: true });
+      await writeFile(path.join(templatesDir, name, "SKILL.md"), `---\nname: ${name}\ndescription: ${name}\nlast_changed_in: 0.1.0\n---\n\nBody\n`);
+    }
+    await installAgentSkills({ cwd, agent: "claude", templatesDir });
+    await installAgentSkills({ cwd, agent: "codex", templatesDir });
+    const manifestPath = path.join(cwd, ".weave", "agents.yml");
+    const manifest = YAML.parse(await readFile(manifestPath, "utf8")) as { installed: Record<string, { skills: Record<string, unknown> }> };
+    delete manifest.installed.claude.skills["weave-review"];
+    delete manifest.installed.codex.skills["weave-review"];
+    await writeFile(manifestPath, YAML.stringify(manifest));
+
+    expect(await detectAvailableSkills({ cwd, templatesDir })).toEqual({ claude: ["weave-review"], codex: ["weave-review"] });
+    const notice = (await gatherNotices({ cwd, packageVersion: "0.1.0", templatesDir, env: {} as NodeJS.ProcessEnv })).find(
+      (entry) => entry.kind === "skills_available",
+    );
+    expect(notice?.message).toBe(
+      "Bundled skills not installed for claude: weave-review; codex: weave-review. Run 'weave agent install claude' and 'weave agent install codex' to add them.",
+    );
+  });
+
+  it("emits no skills_available notice for a complete manifest, no manifest, or WEAVE_NO_NOTICES=1", async () => {
+    const complete = await tempDir();
+    await installAgentSkills({ cwd: complete, agent: "claude" });
+    const none = await tempDir();
+    const empty = await tempDir();
+    await mkdir(path.join(empty, ".weave"), { recursive: true });
+    await writeFile(path.join(empty, ".weave", "agents.yml"), "version: 1\ninstalled: {}\n");
+    for (const cwd of [complete, none, empty]) {
+      const notices = await gatherNotices({ cwd, packageVersion: "0.1.0", npmLatest: "0.1.0", env: {} as NodeJS.ProcessEnv });
+      expect(notices.filter((notice) => notice.kind === "skills_available")).toEqual([]);
+    }
+
+    const partial = await tempDir();
+    await installAgentSkills({ cwd: partial, agent: "claude" });
+    const manifestPath = path.join(partial, ".weave", "agents.yml");
+    const manifest = YAML.parse(await readFile(manifestPath, "utf8")) as { installed: { claude: { skills: Record<string, unknown> } } };
+    delete manifest.installed.claude.skills["weave-explore"];
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    expect(await gatherNotices({ cwd: partial, packageVersion: "0.1.0", env: { WEAVE_NO_NOTICES: "1" } as NodeJS.ProcessEnv })).toEqual([]);
   });
 
   it("isNewerVersion compares semver-shaped strings predictably", () => {
